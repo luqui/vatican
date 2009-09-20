@@ -1,9 +1,19 @@
+// A Bottom-up beta Substituor
+// ---------------------------
+//
+// Based on:
+// "Bottom-Up beta-Substitution: Uplinks and lambda-DAGs"
+// Olin Shivers & Mitchell Wand, 2004
+
 #include <list>
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
 #include <set>
 
 struct Node;
+
+void validate_node(Node*);
 
 enum UplinkType { UPLINK_APPL, UPLINK_APPR, UPLINK_NA };
 
@@ -24,6 +34,7 @@ struct UplinkSet {
     Uplink* tail;
 
     Uplink* add(Node* link, UplinkType type) {
+        validate_node(link);
         Uplink* up = new Uplink;
         up->link = link;
         up->type = type;
@@ -64,19 +75,6 @@ struct UplinkSet {
         }
         std::abort();
     }
-
-    void append(UplinkSet set) {
-        if (set.head == 0) return;
-        if (head == 0) {
-            head = set.head;
-            tail = set.tail;
-            return;
-        }
-
-        tail->next = set.head;
-        set.head->prev = tail;
-        tail = set.tail;
-    }
 };
 
 
@@ -104,6 +102,32 @@ struct Node {
         VarNode var;
     };
 };
+
+void validate_node(Node* node) {
+    return;
+    switch (node->type) {
+        case NODE_APP:
+            validate_node(node->app.left);
+            validate_node(node->app.right);
+            break;
+        case NODE_LAMBDA:
+            validate_node(node->lambda.body);
+            validate_node(node->lambda.var);
+            if (node->lambda.var->type != NODE_VAR) { std::abort(); }
+            break;
+        case NODE_VAR:
+            break;
+        default:
+            std::abort();
+    }
+    if (node->cache != 0) validate_node(node->cache);
+
+    Uplink* cur = node->uplinks.head;
+    while (cur) {
+        if (cur->next && cur->next->prev != cur) { std::abort(); }
+        cur = cur->next;
+    }
+}
 
 
 void upcopy(Node* newchild, Node* into, UplinkType type) {
@@ -141,12 +165,10 @@ void upcopy(Node* newchild, Node* into, UplinkType type) {
         }
         case NODE_LAMBDA: {
             if (into->cache != 0) { 
-                into->cache = newchild;  // hax, we use nonzero bullshit cache to mark top
                 return; 
-            } // don't traverse
+            } // special terminal condition
 
             // allocate a fresh variable node for the new lambda 
-            // (why exactly is this necessary?)
             Node* newVar = new Node;
             newVar->type = NODE_VAR;
             newVar->var = VarNode();
@@ -160,15 +182,18 @@ void upcopy(Node* newchild, Node* into, UplinkType type) {
             into->cache = newNode;
 
             // replace occurrences of the old variable with the new one
-            // (hax, it seems -- this will terminate and modify a cached copy somehow)
+            // (tricky business, see paper)
             upcopy(newVar, into->lambda.var, UPLINK_NA);
             break;
         }
         case NODE_VAR: {
+            std::cerr << "BZZZZZ!\n";
+            std::abort();
             newNode = newchild;
             into->cache = newNode;
             break;
         }
+        default: std::abort();
     }
     
     Uplink* cur = into->uplinks.head;
@@ -189,16 +214,15 @@ void clear(Node* node) {
         // install uplinks, since we omitted them above
         switch (cur->link->type) {
             case NODE_APP: {
-                std::cerr << "Installing app uplinks\n";
                 cur->link->cache->app.left->uplinks.add(cur->link->cache, UPLINK_APPL);
                 cur->link->cache->app.right->uplinks.add(cur->link->cache, UPLINK_APPR);
                 break;
             }
             case NODE_LAMBDA: {
-                std::cerr << "Installing lambda uplinks\n";
                 cur->link->cache->lambda.body->uplinks.add(cur->link->cache, UPLINK_NA);
                 break;
             }
+            default: std::abort();
         }
 
         cur->link->cache = 0;
@@ -229,6 +253,7 @@ void cleanup(Node* node) {
             delete node;
             break;
         }
+        default: std::abort();
     }
 }
 
@@ -259,6 +284,7 @@ void upreplace(Node* newchild, Node* into, UplinkType type) {
             cleanup(old);
             break;
         }
+        default: std::abort();
     }
 }
 
@@ -271,37 +297,20 @@ void beta_reduce(Node* app) {
         result = fun->lambda.body;
     }
     else {
-        switch (fun->lambda.body->type) {
-            case NODE_LAMBDA: {
-                fun->lambda.body->cache = (Node*)0x1;
-                upcopy(arg, fun->lambda.var, UPLINK_NA);
-                result = fun->lambda.body->cache;
-                clear(fun->lambda.var);
-                break;
-            }
-            case NODE_APP: {
-                Node* t = new Node;
-                t->type = NODE_APP;
-                t->app.left = fun->lambda.body->app.left;
-                t->app.right = fun->lambda.body->app.right;
-                fun->lambda.body->cache = t;
-                upcopy(arg, fun->lambda.var, UPLINK_NA);
-                result = fun->lambda.body->cache;
-                clear(fun->lambda.var);
-                break;
-            }
-            case NODE_VAR: {
-                result = arg;
-                break;
-            }
-        }
+        fun->cache = (Node*)~0x0;  // special code for where to stop
+        
+        upcopy(arg, fun->lambda.var, UPLINK_NA);
+
+        result = fun->lambda.body->cache;
+        fun->cache = 0;
+        clear(fun->lambda.var);
     }
 
     Uplink* cur = app->uplinks.head;
     while (cur) {
-        Uplink* nextu = cur->next;
+        Uplink* nexty = cur->next;
         upreplace(result, cur->link, cur->type);
-        cur = nextu;
+        cur = nexty;
     }
 }
 
@@ -325,6 +334,7 @@ bool hnf_reduce_1(Node* ptr) {
         case NODE_VAR: {
             return false;
         }
+        default: std::abort();
     }
 }
 
@@ -356,6 +366,7 @@ void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
             stream << "p" << top << " [label=\"x\"];\n";
             break;
         }
+        default: std::abort();
     }
 
     Uplink* cur = top->uplinks.head;
@@ -385,9 +396,9 @@ Node* Fun(Node* var, Node* body) {
     Node* ret = new Node;
     ret->type = NODE_LAMBDA;
     ret->lambda.body = body;
-    body->uplinks.add(ret, UPLINK_NA);
     ret->lambda.var = var;
     ret->cache = 0;
+    body->uplinks.add(ret, UPLINK_NA);
     return ret;
 }
 
@@ -395,10 +406,10 @@ Node* App(Node* left, Node* right) {
     Node* ret = new Node;
     ret->type = NODE_APP;
     ret->app.left = left;
-    left->uplinks.add(ret, UPLINK_APPL);
     ret->app.right = right;
-    right->uplinks.add(ret, UPLINK_APPR);
     ret->cache = 0;
+    left->uplinks.add(ret, UPLINK_APPL);
+    right->uplinks.add(ret, UPLINK_APPR);
     return ret;
 }
 
@@ -416,8 +427,38 @@ Node* Dummy(Node* body) {
     return Fun(Var(), body);
 }
 
+Node* Fix() {
+    Node* f = Var();
+    Node* x = Var();
+    Node* inner = Fun(x, App(f, App(x,x)));
+    Node* outer = Fun(f, App(SelfApply(), inner));
+    return outer;
+}
+
+Node* Zero() {
+    // \f. \x. x
+    Node* f = Var();
+    Node* x = Var();
+    return Fun(f, Fun(x, x));
+}
+
+Node* Succ() {
+    // \n. \f. \x. f (n f x)
+    Node* n = Var();
+    Node* f = Var();
+    Node* x = Var();
+    return Fun(n, Fun(f, Fun(x, App(f, App(App(n, f), x)))));
+}
+
 int main() {
-    Node* expr = Dummy(App(SelfApply(), Identity()));
-    hnf_reduce(expr);
-    dotify(expr, std::cout);
+    Node* expr = Dummy(App(Fix(), Identity()));  // broken!
+    
+    //Node* succ = Succ();
+    //Node* expr = Dummy(App(App(succ, App(succ, Zero())), Identity()));
+
+    while (true) {
+        dotify(expr, std::cout);
+        std::cout << std::flush;
+        if (!hnf_reduce_1(expr)) break;
+    }
 }

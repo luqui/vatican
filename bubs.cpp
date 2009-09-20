@@ -12,8 +12,6 @@
 
 struct Node;
 
-void validate_node(Node*);
-
 enum UplinkType { UPLINK_APPL, UPLINK_APPR, UPLINK_NA };
 
 struct Uplink {
@@ -33,7 +31,6 @@ struct UplinkSet {
     Uplink* tail;
 
     Uplink* add(Node* link, UplinkType type) {
-        validate_node(link);
         Uplink* up = new Uplink;
         up->link = link;
         up->type = type;
@@ -102,32 +99,6 @@ struct Node {
     };
 };
 
-void validate_node(Node* node) {
-    return;
-    switch (node->type) {
-        case NODE_APP:
-            validate_node(node->app.left);
-            validate_node(node->app.right);
-            break;
-        case NODE_LAMBDA:
-            validate_node(node->lambda.body);
-            validate_node(node->lambda.var);
-            if (node->lambda.var->type != NODE_VAR) { std::abort(); }
-            break;
-        case NODE_VAR:
-            break;
-        default:
-            std::abort();
-    }
-    if (node->cache != 0) validate_node(node->cache);
-
-    Uplink* cur = node->uplinks.head;
-    while (cur) {
-        if (cur->next && cur->next->prev != cur) { std::abort(); }
-        cur = cur->next;
-    }
-}
-
 
 void upcopy(Node* newchild, Node* into, UplinkType type) {
     Node* newNode;
@@ -137,6 +108,7 @@ void upcopy(Node* newchild, Node* into, UplinkType type) {
             if (into->cache == 0) {
                 newNode = new Node;
                 newNode->type = NODE_APP;
+                newNode->cache = 0;
                 // don't install uplinks when creating app nodes,
                 // they will be created on the clear pass
                 if (type == UPLINK_APPL) {
@@ -163,20 +135,22 @@ void upcopy(Node* newchild, Node* into, UplinkType type) {
             break;
         }
         case NODE_LAMBDA: {
-            if (into->cache != 0) { 
+            if (into->cache == (Node*)~0) { // special terminal condition
                 return; 
-            } // special terminal condition
+            } 
 
             // allocate a fresh variable node for the new lambda 
             Node* newVar = new Node;
             newVar->type = NODE_VAR;
             newVar->var = VarNode();
+            newVar->cache = 0;
             
             // prepare the new lambda node
             newNode = new Node;
             newNode->type = NODE_LAMBDA;
             newNode->lambda.body = newchild;
             newNode->lambda.var = newVar;
+            newNode->cache = 0;
 
             into->cache = newNode;
 
@@ -420,6 +394,12 @@ Node* SelfApply() {
     return Fun(x, App(x,x));
 }
 
+Node* TripleApply() {
+    Node* x = Var();
+    Node* y = Var();
+    return Fun(y,Fun(x, App(App(y,x), x)));
+}
+
 Node* Dummy(Node* body) {
     return Fun(Var(), body);
 }
@@ -439,6 +419,13 @@ Node* Zero() {
     return Fun(f, Fun(x, x));
 }
 
+Node* Const() {
+    // \x. \y. x
+    Node* x = Var();
+    Node* y = Var();
+    return Fun(x, Fun(y, x));
+}
+
 Node* Succ() {
     // \n. \f. \x. f (n f x)
     Node* n = Var();
@@ -450,8 +437,7 @@ Node* Succ() {
 int main() {
     Node* expr = Dummy(App(Fix(), Identity()));  // broken!
     
-    //Node* succ = Succ();
-    //Node* expr = Dummy(App(App(succ, App(succ, Zero())), Identity()));
+    // Node* expr = Dummy(App(App(Succ(), App(Succ(), Zero())), Identity()));
 
     while (true) {
         dotify(expr, std::cout);

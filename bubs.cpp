@@ -181,7 +181,10 @@ void upcopy(Node* newchild, Node* into, UplinkType type) {
 void clear(Node* node) {
     Uplink* cur = node->uplinks.head;
     while (cur) {
-        if (cur->link->type != NODE_VAR && cur->link->cache == 0) continue;
+        if (cur->link->cache == 0) {
+            cur = cur->next;
+            continue;
+        }
 
         // install uplinks, since we omitted them above
         switch (cur->link->type) {
@@ -189,10 +192,12 @@ void clear(Node* node) {
                 std::cerr << "Installing app uplinks\n";
                 cur->link->cache->app.left->uplinks.add(cur->link->cache, UPLINK_APPL);
                 cur->link->cache->app.right->uplinks.add(cur->link->cache, UPLINK_APPR);
+                break;
             }
             case NODE_LAMBDA: {
                 std::cerr << "Installing lambda uplinks\n";
                 cur->link->cache->lambda.body->uplinks.add(cur->link->cache, UPLINK_NA);
+                break;
             }
         }
 
@@ -227,7 +232,37 @@ void cleanup(Node* node) {
     }
 }
 
-Node* beta_reduce(Node* top, Node* app) {
+void upreplace(Node* newchild, Node* into, UplinkType type) {
+    switch (into->type) {
+        case NODE_APP: {
+            if (type == UPLINK_APPL) { 
+                Node* old = into->app.left;
+                old->uplinks.unlink(into, UPLINK_APPL);
+                into->app.left = newchild;
+                newchild->uplinks.add(into, UPLINK_APPL);
+                cleanup(old);
+            }
+            else {
+                Node* old = into->app.right;
+                old->uplinks.unlink(into, UPLINK_APPR);
+                into->app.right = newchild;
+                newchild->uplinks.add(into, UPLINK_APPR);
+                cleanup(old);
+            }
+            break;
+        }
+        case NODE_LAMBDA: {
+            Node* old = into->lambda.body;
+            old->uplinks.unlink(into, UPLINK_NA);
+            into->lambda.body = newchild;
+            newchild->uplinks.add(into, UPLINK_NA);
+            cleanup(old);
+            break;
+        }
+    }
+}
+
+void beta_reduce(Node* app) {
     Node* fun = app->app.left;
     Node* arg = app->app.right;
     
@@ -264,42 +299,37 @@ Node* beta_reduce(Node* top, Node* app) {
 
     Uplink* cur = app->uplinks.head;
     while (cur) {
-        upcopy(result, cur->link, cur->type);
-        cur = cur->next;
+        Uplink* nextu = cur->next;
+        upreplace(result, cur->link, cur->type);
+        cur = nextu;
     }
-
-    app->uplinks = UplinkSet();
-    Node* ret = top->cache;
-    cleanup(app);
-
-    return ret;
 }
 
 
-Node* hnf_reduce_1(Node* top, Node* ptr) {
+bool hnf_reduce_1(Node* ptr) {
     switch (ptr->type) {
         case NODE_LAMBDA: {
-            return hnf_reduce_1(top, ptr->lambda.body);
+            return hnf_reduce_1(ptr->lambda.body);
         }
         case NODE_APP: {
-            Node* newleft = hnf_reduce_1(top, ptr->app.left);
-            if (newleft) { return newleft; }
+            if (hnf_reduce_1(ptr->app.left)) { return true; }
 
             if (ptr->app.left->type == NODE_LAMBDA) {
-                return beta_reduce(top, ptr);
+                beta_reduce(ptr);
+                return true;
             }
             else {
-                return 0;
+                return false;
             }
         }
         case NODE_VAR: {
-            return 0;
+            return false;
         }
     }
 }
 
-Node* hnf_reduce(Node* top) {
-    while (top = hnf_reduce_1(top, top)) { }
+void hnf_reduce(Node* top) {
+    while (hnf_reduce_1(top)) { }
 }
 
 void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
@@ -372,11 +402,22 @@ Node* App(Node* left, Node* right) {
     return ret;
 }
 
-int main() {
+Node* Identity() {
     Node* x = Var();
-    Node* f = Fun(x,x);
-    Node* y = Var();
-    Node* expr = Fun(y,App(f,f));
-    expr = hnf_reduce_1(expr, expr);
+    return Fun(x,x);
+}
+
+Node* SelfApply() {
+    Node* x = Var();
+    return Fun(x, App(x,x));
+}
+
+Node* Dummy(Node* body) {
+    return Fun(Var(), body);
+}
+
+int main() {
+    Node* expr = Dummy(App(SelfApply(), Identity()));
+    hnf_reduce(expr);
     dotify(expr, std::cout);
 }

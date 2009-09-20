@@ -8,7 +8,6 @@
 #include <list>
 #include <cstdlib>
 #include <iostream>
-#include <fstream>
 #include <set>
 
 struct Node;
@@ -187,8 +186,6 @@ void upcopy(Node* newchild, Node* into, UplinkType type) {
             break;
         }
         case NODE_VAR: {
-            std::cerr << "BZZZZZ!\n";
-            std::abort();
             newNode = newchild;
             into->cache = newNode;
             break;

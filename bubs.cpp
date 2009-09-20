@@ -187,16 +187,18 @@ void clear(Node* node) {
             case NODE_APP: {
                 cur->link->cache->app.left->uplinks.add(cur->link->cache, UPLINK_APPL);
                 cur->link->cache->app.right->uplinks.add(cur->link->cache, UPLINK_APPR);
+                cur->link->cache = 0;
                 break;
             }
             case NODE_LAMBDA: {
                 cur->link->cache->lambda.body->uplinks.add(cur->link->cache, UPLINK_NA);
+                cur->link->cache = 0;
+                clear(cur->link->lambda.var);
                 break;
             }
             default: std::abort();
         }
 
-        cur->link->cache = 0;
         clear(cur->link);
         cur = cur->next;
     }
@@ -436,7 +438,9 @@ Node* Succ() {
 
 int main() {
     Node* expr = Dummy(App(Fix(), Identity()));  // broken!
-    
+    //Node* self = SelfApply();
+    //Node* expr = Dummy(App(self, self));
+
     // Node* expr = Dummy(App(App(Succ(), App(Succ(), Zero())), Identity()));
 
     while (true) {

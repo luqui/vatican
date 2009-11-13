@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <set>
+#include <string>
+#include <sstream>
 
 struct Node;
 
@@ -86,12 +88,11 @@ struct LambdaNode {
 
 struct VarNode { };
 
-struct PrimNode {
-    typedef PrimNode (*action_t)(PrimNode* self, PrimNode* other);
-    typedef void (*cleanup_t)(PrimNode* self);
-    action_t action;  // NULL means value
-    cleanup_t cleanup;
-    void* data;
+class PrimNode {
+  public:
+    virtual ~PrimNode() { }
+    virtual PrimNode* action(PrimNode* other) = 0;
+    virtual std::string repr() = 0;
 };
 
 enum NodeType { NODE_APP, NODE_LAMBDA, NODE_VAR, NODE_PRIM };
@@ -104,7 +105,7 @@ struct Node {
         AppNode app;
         LambdaNode lambda;
         VarNode var;
-        PrimNode prim;
+        PrimNode* prim;
     };
 };
 
@@ -240,9 +241,7 @@ void cleanup(Node* node) {
             break;
         }
         case NODE_PRIM: {
-            if (node->prim.cleanup != 0) {
-                node->prim.cleanup(&node->prim);
-            }
+            delete node->prim;
             delete node;
             break;
         }
@@ -315,7 +314,7 @@ void prim_reduce(Node* app) {
     result->cache = 0;
     result->type = NODE_PRIM;
 
-    result->prim = fun->prim.action(&fun->prim, &arg->prim);
+    result->prim = fun->prim->action(arg->prim);
 
     Uplink* cur = app->uplinks.head;
     while (cur) {
@@ -388,7 +387,7 @@ void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
             break;
         }
         case NODE_PRIM: {
-            stream << "p" << top << " [label=\"" << top->prim.data << "\"];\n";
+            stream << "p" << top << " [label=\"" << top->prim->repr() << "\"];\n";
             break;
         }
         default: std::abort();
@@ -436,6 +435,14 @@ Node* App(Node* left, Node* right) {
     left->uplinks.add(ret, UPLINK_APPL);
     right->uplinks.add(ret, UPLINK_APPR);
     return ret;
+}
+
+Node* Prim(PrimNode* node) {
+    Node* r = new Node;
+    r->type = NODE_PRIM;
+    r->cache = 0;
+    r->prim = node;
+    return r;
 }
 
 Node* Identity() {
@@ -488,50 +495,37 @@ Node* Succ() {
     return Fun(n, Fun(f, Fun(x, App(f, App(App(n, f), x)))));
 }
 
-PrimNode PrimNodeInt(long n) {
-    PrimNode ret;
-    ret.action = 0;
-    ret.cleanup = 0;
-    ret.data = (void*)n;
-    return ret;
+std::string int_to_string(int i) {
+    std::stringstream ss;
+    ss << i;
+    return ss.str();
 }
 
-Node* PrimInt(long n) {
-    Node* r = new Node;
-    r->type = NODE_PRIM;
-    r->cache = 0;
-    r->prim = PrimNodeInt(n);
-    return r;
-}
+class IntPrim : public PrimNode {
+  public:
+    int value;
+    IntPrim(int v) : value(v) { }
+    PrimNode* action(PrimNode* other) { abort(); }
+    std::string repr() { return int_to_string(value); }
+};
 
-PrimNode plusint_action(PrimNode* self, PrimNode* other) {
-    return PrimNodeInt((long)self->data + (long)other->data);
-}
+class PlusIntPrim : public PrimNode {
+  public:
+    int value;
+    PlusIntPrim(int v) : value(v) { }
+    PrimNode* action(PrimNode* other) { return new IntPrim(((IntPrim*)other)->value + value); }
+    std::string repr() { return "(" + int_to_string(value) + "+)"; }
+};
 
-PrimNode PrimNodePlusInt(long n) {
-    PrimNode ret;
-    ret.action = &plusint_action;
-    ret.cleanup = 0;
-    ret.data = (void*)n;
-    return ret;
-}
+class PlusPrim : public PrimNode {
+  public:
+    PrimNode* action(PrimNode* other) { return new PlusIntPrim(((IntPrim*)other)->value); }
+    std::string repr() { return "(+)"; }
+};
 
-PrimNode plus_action(PrimNode* self, PrimNode* other) {
-    return PrimNodePlusInt((long)other->data);
-}
-
-Node* PrimPlus() {
-    Node* r = new Node;
-    r->type = NODE_PRIM;
-    r->cache = 0;
-    r->prim.action = &plus_action;
-    r->prim.cleanup = 0;
-    r->prim.data = 0;
-    return r;
-}
 
 int main() {
-    Node* expr = Dummy(App(App(PrimPlus(),PrimInt(1)), PrimInt(2)));
+    Node* expr = Dummy(App(App(Prim(new PlusPrim()), Prim(new IntPrim(1))), Prim(new IntPrim(2))));
     //Node* expr = Dummy(App(Fix(), Identity()));  // broken!
     //Node* self = SelfApply();
     //Node* expr = Dummy(App(self, self));

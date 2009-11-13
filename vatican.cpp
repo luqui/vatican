@@ -370,13 +370,15 @@ static void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
         case NODE_LAMBDA: {
             stream << "p" << top << " [label=\"\\\\\"];\n";
             stream << "p" << top << " -> p" << top->lambda.body << ";\n";
-            stream << "p" << top << " -> p" << top->lambda.var << " [color=blue];\n";
+            if (top->lambda.var->uplinks.head != 0) {
+                stream << "p" << top << " -> p" << top->lambda.var << " [color=blue];\n";
+            }
             dotify_rec(top->lambda.body, stream, seen);
             break;
         }
         case NODE_APP: {
             stream << "p" << top << " [label=\"*\"];\n";
-            stream << "p" << top << " -> p" << top->app.left << " [label=\"fv\"];\n";
+            stream << "p" << top << " -> p" << top->app.left << " [color=\"#007f00\",label=\"fv\"];\n";
             stream << "p" << top << " -> p" << top->app.right << " [label=\"av\"];\n";
             dotify_rec(top->app.left, stream, seen);
             dotify_rec(top->app.right, stream, seen);
@@ -401,8 +403,11 @@ static void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
 }
 
 void dotify(Head* top, std::ostream& stream) {
-    stream << "digraph Lambda {\n";
     std::set<Node*> set;
+    stream << "digraph Lambda {\n";
+    stream << "p" << top->dummy << " [label=\"HEAD\"];\n";
+    stream << "p" << top->dummy << " -> p" << top->dummy->lambda.body << ";\n";
+    set.insert(top->dummy);
     dotify_rec(top->dummy->lambda.body, stream, &set);
     stream << "}\n";
 }

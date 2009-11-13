@@ -81,7 +81,7 @@ class PlusPrim : public PrimNode {
 
 
 int main() {
-    Node* expr = Head(App(App(Prim(new PlusPrim()), Prim(new IntPrim(1))), Prim(new IntPrim(2))));
+    Head* expr = MakeHead(App(App(Prim(new PlusPrim()), Prim(new IntPrim(1))), Prim(new IntPrim(2))));
     //Node* expr = Dummy(App(Fix(), Identity()));  // broken!
     //Node* self = SelfApply();
     //Node* expr = Dummy(App(self, self));

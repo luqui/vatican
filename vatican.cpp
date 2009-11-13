@@ -93,6 +93,11 @@ class Node {
     };
 };
 
+class Head {
+  public:
+    Node* dummy;
+};
+
 static void upcopy(Node* newchild, Node* into, UplinkType type) {
     Node* newNode;
 
@@ -307,7 +312,7 @@ static void prim_reduce(Node* app) {
     }
 }
 
-bool hnf_reduce_1(Node* ptr) {
+static bool hnf_reduce_1(Node* ptr) {
     switch (ptr->type) {
         case NODE_LAMBDA: {
             return hnf_reduce_1(ptr->lambda.body);
@@ -340,7 +345,11 @@ bool hnf_reduce_1(Node* ptr) {
     }
 }
 
-void hnf_reduce(Node* top) {
+bool hnf_reduce_1(Head* ptr) {
+    return hnf_reduce_1(ptr->dummy);
+}
+
+void hnf_reduce(Head* top) {
     while (hnf_reduce_1(top)) { }
 }
 
@@ -382,15 +391,17 @@ static void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
     }
 }
 
-void dotify(Node* top, std::ostream& stream) {
+void dotify(Head* top, std::ostream& stream) {
     stream << "digraph Lambda {\n";
     std::set<Node*> set;
-    dotify_rec(top, stream, &set);
+    dotify_rec(top->dummy, stream, &set);
     stream << "}\n";
 }
 
-Node* Head(Node* body) {
-    return Fun(Var(), body);
+Head* MakeHead(Node* body) {
+    Head* ret = new Head;
+    ret->dummy = Fun(Var(), body);
+    return ret;
 }
 
 Node* Var() {

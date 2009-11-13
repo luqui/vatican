@@ -14,6 +14,7 @@
 namespace vatican {
 
 class Node;
+class Head;
 
 class PrimNode {
   public:
@@ -24,15 +25,15 @@ class PrimNode {
 
 // Find the first beta reduction in head normal order and
 // reduce it.  Returns whether a reduction was performed.
-bool hnf_reduce_1(Node*);
+bool hnf_reduce_1(Head*);
 
 // Reduce a term to head normal form.  Can infinite loop.
-void hnf_reduce(Node*);
+void hnf_reduce(Head*);
 
 // Write a dot graph of the expression.
-void dotify(Node*, std::ostream&);
+void dotify(Head*, std::ostream&);
 
-Node* Head(Node* body);
+Head* MakeHead(Node* body);
 Node* Var();
 Node* Fun(Node* var, Node* body);
 Node* App(Node* fun, Node* arg);

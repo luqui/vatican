@@ -42,6 +42,10 @@ Node* App(Node* fun, Node* arg);
 // with "new" (it will be "delete"d).
 Node* Prim(PrimNode*);
 
+// Retrieve the Prim from within a head.  Returns NULL
+// if the expression is not a normal form or is not a Prim.
+PrimNode* GetPrim(Head*);
+
 }
 
 #endif

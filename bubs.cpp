@@ -93,4 +93,6 @@ int main() {
         std::cout << std::flush;
         if (!hnf_reduce_1(expr)) break;
     }
+
+    std::cout << ((IntPrim*)GetPrim(expr))->value << "\n";
 }

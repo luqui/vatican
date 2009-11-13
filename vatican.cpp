@@ -440,5 +440,11 @@ Node* Prim(PrimNode* node) {
     return r;
 }
 
+PrimNode* GetPrim(Head* expr) {
+    if (expr->dummy->type != NODE_LAMBDA || expr->dummy->lambda.body->type != NODE_PRIM) {
+        return 0;
+    }
+    return expr->dummy->lambda.body->prim;
+}
 
 }

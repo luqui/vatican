@@ -86,7 +86,15 @@ struct LambdaNode {
 
 struct VarNode { };
 
-enum NodeType { NODE_APP, NODE_LAMBDA, NODE_VAR };
+struct PrimNode {
+    typedef PrimNode (*action_t)(PrimNode* self, PrimNode* other);
+    typedef void (*cleanup_t)(PrimNode* self);
+    action_t action;  // NULL means value
+    cleanup_t cleanup;
+    void* data;
+};
+
+enum NodeType { NODE_APP, NODE_LAMBDA, NODE_VAR, NODE_PRIM };
 
 struct Node {
     Node* cache;
@@ -96,6 +104,7 @@ struct Node {
         AppNode app;
         LambdaNode lambda;
         VarNode var;
+        PrimNode prim;
     };
 };
 
@@ -164,6 +173,10 @@ void upcopy(Node* newchild, Node* into, UplinkType type) {
             into->cache = newNode;
             break;
         }
+        case NODE_PRIM: {
+            newNode = newchild;
+            into->cache = newNode;
+        }
         default: std::abort();
     }
     
@@ -223,6 +236,13 @@ void cleanup(Node* node) {
             break;
         }
         case NODE_VAR: {
+            delete node;
+            break;
+        }
+        case NODE_PRIM: {
+            if (node->prim.cleanup != 0) {
+                node->prim.cleanup(&node->prim);
+            }
             delete node;
             break;
         }
@@ -287,6 +307,24 @@ void beta_reduce(Node* app) {
     }
 }
 
+void prim_reduce(Node* app) {
+    Node* fun = app->app.left;
+    Node* arg = app->app.right;
+
+    Node* result = new Node;
+    result->cache = 0;
+    result->type = NODE_PRIM;
+
+    result->prim = fun->prim.action(&fun->prim, &arg->prim);
+
+    Uplink* cur = app->uplinks.head;
+    while (cur) {
+        Uplink* nexty = cur->next;
+        upreplace(result, cur->link, cur->type);
+        cur = nexty;
+    }
+}
+
 
 bool hnf_reduce_1(Node* ptr) {
     switch (ptr->type) {
@@ -294,10 +332,17 @@ bool hnf_reduce_1(Node* ptr) {
             return hnf_reduce_1(ptr->lambda.body);
         }
         case NODE_APP: {
-            if (hnf_reduce_1(ptr->app.left)) { return true; }
+            bool reduced = hnf_reduce_1(ptr->app.left);
+            if (reduced) { return true; }
 
             if (ptr->app.left->type == NODE_LAMBDA) {
                 beta_reduce(ptr);
+                return true;
+            }
+            else if (ptr->app.left->type == NODE_PRIM) {
+                // cbv for prims
+                if (hnf_reduce_1(ptr->app.right)) { return true; }
+                prim_reduce(ptr);
                 return true;
             }
             else {
@@ -305,6 +350,9 @@ bool hnf_reduce_1(Node* ptr) {
             }
         }
         case NODE_VAR: {
+            return false;
+        }
+        case NODE_PRIM: {
             return false;
         }
         default: std::abort();
@@ -337,6 +385,10 @@ void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
         }
         case NODE_VAR: {
             stream << "p" << top << " [label=\"x\"];\n";
+            break;
+        }
+        case NODE_PRIM: {
+            stream << "p" << top << " [label=\"" << top->prim.data << "\"];\n";
             break;
         }
         default: std::abort();
@@ -436,8 +488,51 @@ Node* Succ() {
     return Fun(n, Fun(f, Fun(x, App(f, App(App(n, f), x)))));
 }
 
+PrimNode PrimNodeInt(long n) {
+    PrimNode ret;
+    ret.action = 0;
+    ret.cleanup = 0;
+    ret.data = (void*)n;
+    return ret;
+}
+
+Node* PrimInt(long n) {
+    Node* r = new Node;
+    r->type = NODE_PRIM;
+    r->cache = 0;
+    r->prim = PrimNodeInt(n);
+    return r;
+}
+
+PrimNode plusint_action(PrimNode* self, PrimNode* other) {
+    return PrimNodeInt((long)self->data + (long)other->data);
+}
+
+PrimNode PrimNodePlusInt(long n) {
+    PrimNode ret;
+    ret.action = &plusint_action;
+    ret.cleanup = 0;
+    ret.data = (void*)n;
+    return ret;
+}
+
+PrimNode plus_action(PrimNode* self, PrimNode* other) {
+    return PrimNodePlusInt((long)other->data);
+}
+
+Node* PrimPlus() {
+    Node* r = new Node;
+    r->type = NODE_PRIM;
+    r->cache = 0;
+    r->prim.action = &plus_action;
+    r->prim.cleanup = 0;
+    r->prim.data = 0;
+    return r;
+}
+
 int main() {
-    Node* expr = Dummy(App(Fix(), Identity()));  // broken!
+    Node* expr = Dummy(App(App(PrimPlus(),PrimInt(1)), PrimInt(2)));
+    //Node* expr = Dummy(App(Fix(), Identity()));  // broken!
     //Node* self = SelfApply();
     //Node* expr = Dummy(App(self, self));
 

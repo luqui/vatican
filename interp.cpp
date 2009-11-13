@@ -41,7 +41,9 @@ class PrimPlusPartial : public PrimNode {
     PrimPlusPartial(int v) : value(v) { }
     PrimNode* apply(Head* other) const { 
         hnf_reduce(other);
-        return new PrimInt32(((PrimInt32*)get_prim(other))->value + value); 
+        PrimNode* node = get_prim(other);
+        if (node == 0) return 0;
+        else return new PrimInt32(((PrimInt32*)node)->value + value); 
     }
     std::string repr() const { return "(" + int_to_string(value) + "+)"; }
 };
@@ -50,7 +52,9 @@ class PrimPlus : public PrimNode {
   public:
     PrimNode* apply(Head* other) const { 
         hnf_reduce(other);
-        return new PrimPlusPartial(((PrimInt32*)get_prim(other))->value); 
+        PrimNode* node = get_prim(other);
+        if (node == 0) return 0;
+        else return new PrimPlusPartial(((PrimInt32*)node)->value); 
     }
     std::string repr() const { return "(+)"; }
 };
@@ -99,6 +103,17 @@ void interpret(Node* node) {
     free_head(head);
 }
 
+void trace(Node* node) {
+    Head* head = make_head(node);
+    while (true) {
+        dotify(head, std::cout);
+        std::cout << std::flush;
+        if (!hnf_reduce_1(head)) { break; }
+    }
+    std::cout << ((PrimInt32*)get_prim(head))->value << "\n";
+    free_head(head);
+}
+
 int main(int argc, char** argv) {
     std::deque<Node*> stack;
     std::streambuf* pbuf;
@@ -107,5 +122,12 @@ int main(int argc, char** argv) {
         std::fstream* fin = new std::fstream(argv[1]);
         pbuf = fin->rdbuf();
     }
-    interpret(build_node(*pbuf, stack));
+
+    Node* node = build_node(*pbuf, stack);
+    if (argc == 3 && std::string(argv[2]) == "-t") {
+        trace(node);
+    }
+    else {
+        interpret(node);
+    }
 }

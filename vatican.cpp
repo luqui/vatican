@@ -294,24 +294,34 @@ static void beta_reduce(Node* app) {
     }
 }
 
-static void prim_reduce(Node* app) {
+static bool prim_reduce(Node* app) {
     Node* fun = app->app.left;
     Node* arg = app->app.right;
 
-    Node* result = new Node;
-    result->cache = 0;
-    result->type = NODE_PRIM;
-
     Head* arghead = make_head(arg);
-    result->prim = fun->prim->apply(arghead);
+    PrimNode* p = fun->prim->apply(arghead);
     free_head(arghead);
 
-    Uplink* cur = app->uplinks.head;
-    while (cur) {
-        Uplink* nexty = cur->next;
-        upreplace(result, cur->link, cur->type);
-        cur = nexty;
+    if (p == 0) {
+        // didn't reduce
+        return false;
     }
+    else {
+        Node* result = new Node;
+        result->cache = 0;
+        result->type = NODE_PRIM;
+        result->prim = p;
+
+        Uplink* cur = app->uplinks.head;
+        while (cur) {
+            Uplink* nexty = cur->next;
+            upreplace(result, cur->link, cur->type);
+            cur = nexty;
+        }
+        return true;
+    }
+
+
 }
 
 static bool hnf_reduce_1(Node* ptr) {
@@ -328,8 +338,7 @@ static bool hnf_reduce_1(Node* ptr) {
                 return true;
             }
             else if (ptr->app.left->type == NODE_PRIM) {
-                prim_reduce(ptr);
-                return true;
+                return prim_reduce(ptr);
             }
             else {
                 return false;
@@ -394,7 +403,7 @@ static void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
 void dotify(Head* top, std::ostream& stream) {
     stream << "digraph Lambda {\n";
     std::set<Node*> set;
-    dotify_rec(top->dummy, stream, &set);
+    dotify_rec(top->dummy->lambda.body, stream, &set);
     stream << "}\n";
 }
 

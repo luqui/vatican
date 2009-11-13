@@ -33,8 +33,9 @@ fun f = AST $ do
     vid <- alloc
     let var :: ASTM Term 
         var = asks (TVar . (Map.! vid))
-    local (Map.insert vid 0 . Map.map (+1)) $ unAST (f (AST var))
+    local (Map.insert vid 0 . Map.map (+1)) . fmap TFun $ unAST (f (AST var))
 
+infixl 9 %
 (%) :: AST -> AST -> AST
 AST t % AST u = AST $ liftM2 TApp t u
 

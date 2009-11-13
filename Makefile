@@ -1,8 +1,8 @@
 CXXFLAGS = -g -Wall
 
-all: bubs
+all: interp
 
-bubs: vatican.cpp bubs.cpp
+interp: vatican.cpp interp.cpp
 
 %.png: %.dot
 	dot -T png -o $@ $^

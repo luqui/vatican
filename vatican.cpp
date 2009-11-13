@@ -303,7 +303,7 @@ static void prim_reduce(Node* app) {
     result->type = NODE_PRIM;
 
     Head* arghead = make_head(arg);
-    result->prim = fun->prim->action(arghead);
+    result->prim = fun->prim->apply(arghead);
     free_head(arghead);
 
     Uplink* cur = app->uplinks.head;

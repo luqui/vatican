@@ -21,9 +21,9 @@ class PrimNode {
     virtual ~PrimNode() { }
 
     // If you store the head, you must copy it!
-    virtual PrimNode* action(Head* other) = 0;
+    virtual PrimNode* apply(Head* other) const = 0;
     
-    virtual std::string repr() = 0;
+    virtual std::string repr() const = 0;
 };
 
 // Find the first beta reduction in head normal order and

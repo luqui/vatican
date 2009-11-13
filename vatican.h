@@ -26,9 +26,7 @@ class PrimNode {
     virtual std::string repr() const = 0;
 };
 
-// Find the first beta reduction in head normal order and
-// reduce it.  Returns whether a reduction was performed.
-bool hnf_reduce_1(Head*);
+extern void (*post_red_hook)();
 
 // Reduce a term to head normal form.  Can infinite loop.
 void hnf_reduce(Head*);

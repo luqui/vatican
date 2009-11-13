@@ -98,6 +98,9 @@ class Head {
     Node* dummy;
 };
 
+void empty() { }
+void (*post_red_hook)() = &empty;
+
 static void upcopy(Node* newchild, Node* into, UplinkType type) {
     Node* newNode;
 
@@ -268,7 +271,7 @@ static void upreplace(Node* newchild, Node* into, UplinkType type) {
     }
 }
 
-static void beta_reduce(Node* app) {
+static Node* beta_reduce(Node* app) {
     Node* fun = app->app.left;
     Node* arg = app->app.right;
     
@@ -292,9 +295,12 @@ static void beta_reduce(Node* app) {
         upreplace(result, cur->link, cur->type);
         cur = nexty;
     }
+
+    post_red_hook();
+    return result;
 }
 
-static bool prim_reduce(Node* app) {
+static Node* prim_reduce(Node* app) {
     Node* fun = app->app.left;
     Node* arg = app->app.right;
 
@@ -304,7 +310,7 @@ static bool prim_reduce(Node* app) {
 
     if (p == 0) {
         // didn't reduce
-        return false;
+        return 0;
     }
     else {
         Node* result = new Node;
@@ -318,48 +324,43 @@ static bool prim_reduce(Node* app) {
             upreplace(result, cur->link, cur->type);
             cur = nexty;
         }
-        return true;
+    
+        post_red_hook();
+        return result;
     }
-
-
 }
 
-static bool hnf_reduce_1(Node* ptr) {
-    switch (ptr->type) {
+void hnf_reduce(Node* node) {
+tailcall:
+    switch (node->type) {
         case NODE_LAMBDA: {
-            return hnf_reduce_1(ptr->lambda.body);
+            node = node->lambda.body;
+            goto tailcall;
         }
         case NODE_APP: {
-            bool reduced = hnf_reduce_1(ptr->app.left);
-            if (reduced) { return true; }
-
-            if (ptr->app.left->type == NODE_LAMBDA) {
-                beta_reduce(ptr);
-                return true;
+            hnf_reduce(node->app.left);
+            if (node->app.left->type == NODE_LAMBDA) {
+                node = beta_reduce(node);
+                goto tailcall;
             }
-            else if (ptr->app.left->type == NODE_PRIM) {
-                return prim_reduce(ptr);
+            else if (node->app.left->type == NODE_PRIM) {
+                Node* newnode = prim_reduce(node);
+                if (newnode == 0) { return; }
+                else { node = newnode; goto tailcall; }
             }
             else {
-                return false;
+                return;
             }
         }
-        case NODE_VAR: {
-            return false;
-        }
+        case NODE_VAR:
         case NODE_PRIM: {
-            return false;
+            return;
         }
-        default: std::abort();
     }
-}
-
-bool hnf_reduce_1(Head* ptr) {
-    return hnf_reduce_1(ptr->dummy);
 }
 
 void hnf_reduce(Head* top) {
-    while (hnf_reduce_1(top)) { }
+    hnf_reduce(top->dummy);
 }
 
 static void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
@@ -371,7 +372,7 @@ static void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
             stream << "p" << top << " [label=\"\\\\\"];\n";
             stream << "p" << top << " -> p" << top->lambda.body << ";\n";
             if (top->lambda.var->uplinks.head != 0) {
-                stream << "p" << top << " -> p" << top->lambda.var << " [color=blue];\n";
+                stream << "p" << top << " -> p" << top->lambda.var << " [weight=0,color=blue];\n";
             }
             dotify_rec(top->lambda.body, stream, seen);
             break;

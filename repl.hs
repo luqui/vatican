@@ -64,6 +64,12 @@ interp ast = do
     system "./interp bytecode.vat"
     return ()
 
+trace :: AST -> IO ()
+trace ast = do
+    writeBytecode "bytecode.vat" ast
+    system "./interp bytecode.vat -t | perl view.pl"
+    return ()
+
 writeBytecode :: FilePath -> AST -> IO ()
 writeBytecode file = writeFile file . map (chr . fromIntegral) . toBytes . toTerm 
 

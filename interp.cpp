@@ -37,6 +37,7 @@ class PrimInt32 : public PrimNode {
 
 class PrimPlusPartial : public PrimNode {
   public:
+    bool breakage;
     int value;
     PrimPlusPartial(int v) : value(v) { }
     PrimNode* apply(Head* other) const { 
@@ -96,22 +97,15 @@ Node* build_node(std::streambuf& stream, std::deque<Node*>& varstack) {
     }
 }
 
-void interpret(Node* node) {
-    Head* head = make_head(node);
+void interpret(Head* head) {
     hnf_reduce(head);
     std::cout << ((PrimInt32*)get_prim(head))->value << "\n";
-    free_head(head);
 }
 
-void trace(Node* node) {
-    Head* head = make_head(node);
-    while (true) {
-        dotify(head, std::cout);
-        std::cout << std::flush;
-        if (!hnf_reduce_1(head)) { break; }
-    }
-    std::cout << ((PrimInt32*)get_prim(head))->value << "\n";
-    free_head(head);
+Head* HEAD;
+void redhook() {
+    dotify(HEAD, std::cout);
+    std::cout << std::flush;
 }
 
 int main(int argc, char** argv) {
@@ -124,10 +118,10 @@ int main(int argc, char** argv) {
     }
 
     Node* node = build_node(*pbuf, stack);
+    HEAD = make_head(node);
     if (argc == 3 && std::string(argv[2]) == "-t") {
-        trace(node);
+        post_red_hook = &redhook;
     }
-    else {
-        interpret(node);
-    }
+    interpret(HEAD);
+    free_head(HEAD);
 }

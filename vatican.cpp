@@ -302,7 +302,9 @@ static void prim_reduce(Node* app) {
     result->cache = 0;
     result->type = NODE_PRIM;
 
-    result->prim = fun->prim->action(arg->prim);
+    Head* arghead = make_head(arg);
+    result->prim = fun->prim->action(arghead);
+    free_head(arghead);
 
     Uplink* cur = app->uplinks.head;
     while (cur) {
@@ -326,8 +328,6 @@ static bool hnf_reduce_1(Node* ptr) {
                 return true;
             }
             else if (ptr->app.left->type == NODE_PRIM) {
-                // cbv for prims
-                if (hnf_reduce_1(ptr->app.right)) { return true; }
                 prim_reduce(ptr);
                 return true;
             }
@@ -398,10 +398,21 @@ void dotify(Head* top, std::ostream& stream) {
     stream << "}\n";
 }
 
-Head* MakeHead(Node* body) {
+Head* make_head(Node* body) {
     Head* ret = new Head;
     ret->dummy = Fun(Var(), body);
     return ret;
+}
+
+Head* copy_head(Head* other) {
+    Head* ret = new Head;
+    ret->dummy = Fun(Var(), other->dummy);
+    return ret;
+}
+
+void free_head(Head* head) {
+    cleanup(head->dummy);
+    delete head;
 }
 
 Node* Var() {
@@ -440,7 +451,7 @@ Node* Prim(PrimNode* node) {
     return r;
 }
 
-PrimNode* GetPrim(Head* expr) {
+PrimNode* get_prim(Head* expr) {
     if (expr->dummy->type != NODE_LAMBDA || expr->dummy->lambda.body->type != NODE_PRIM) {
         return 0;
     }

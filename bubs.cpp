@@ -61,7 +61,7 @@ class IntPrim : public PrimNode {
   public:
     int value;
     IntPrim(int v) : value(v) { }
-    PrimNode* action(PrimNode* other) { abort(); }
+    PrimNode* action(Head* other) { abort(); }
     std::string repr() { return int_to_string(value); }
 };
 
@@ -69,19 +69,25 @@ class PlusIntPrim : public PrimNode {
   public:
     int value;
     PlusIntPrim(int v) : value(v) { }
-    PrimNode* action(PrimNode* other) { return new IntPrim(((IntPrim*)other)->value + value); }
+    PrimNode* action(Head* other) { 
+        hnf_reduce(other);
+        return new IntPrim(((IntPrim*)get_prim(other))->value + value); 
+    }
     std::string repr() { return "(" + int_to_string(value) + "+)"; }
 };
 
 class PlusPrim : public PrimNode {
   public:
-    PrimNode* action(PrimNode* other) { return new PlusIntPrim(((IntPrim*)other)->value); }
+    PrimNode* action(Head* other) { 
+        hnf_reduce(other);
+        return new PlusIntPrim(((IntPrim*)get_prim(other))->value); 
+    }
     std::string repr() { return "(+)"; }
 };
 
 
 int main() {
-    Head* expr = MakeHead(App(App(Prim(new PlusPrim()), Prim(new IntPrim(1))), Prim(new IntPrim(2))));
+    Head* expr = make_head(App(App(Prim(new PlusPrim()), Prim(new IntPrim(1))), Prim(new IntPrim(2))));
     //Node* expr = Dummy(App(Fix(), Identity()));  // broken!
     //Node* self = SelfApply();
     //Node* expr = Dummy(App(self, self));
@@ -94,5 +100,5 @@ int main() {
         if (!hnf_reduce_1(expr)) break;
     }
 
-    std::cout << ((IntPrim*)GetPrim(expr))->value << "\n";
+    std::cout << ((IntPrim*)get_prim(expr))->value << "\n";
 }

@@ -11,45 +11,38 @@
 // "Bottom-Up beta-Substitution: Uplinks and lambda-DAGs"
 // Olin Shivers & Mitchell Wand, 2004
 
-namespace vatican {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-class Node;
-class Head;
+typedef struct vnNode vnNode;
+typedef struct vnHead vnHead;
+typedef struct vnPrimNode vnPrimNode;
 
-class PrimNode {
-  public:
-    virtual ~PrimNode() { }
+typedef vnPrimNode* vnApplyCallback(void* data, vnHead* arg);
+typedef void vnCleanupCallback(void* data);
 
-    // If you store the head, you must copy it!
-    virtual PrimNode* apply(Head* other) const = 0;
-    
-    virtual std::string repr() const = 0;
-};
-
-extern void (*post_red_hook)();
+vnPrimNode* vnMakePrim(void* data, vnApplyCallback apply, vnCleanupCallback cleanup);
 
 // Reduce a term to head normal form.  Can infinite loop.
-void hnf_reduce(Head*);
+void vnReduceHNF(vnHead*);
 
-// Write a dot graph of the expression.
-void dotify(Head*, std::ostream&);
-
-Head* make_head(Node* body);
-Head* copy_head(Head* other);
-void free_head(Head*);
+vnHead* vnMakeHead(vnNode* body);
+vnHead* vnCopyHead(vnHead* other);
+void vnFreeHead(vnHead*);
 
 // Retrieve the Prim from within a head.  Returns NULL
 // if the expression is not a normal form or is not a Prim.
-PrimNode* get_prim(Head*);
+vnPrimNode* vnGetHead(vnHead*);
 
-Node* Var();
-Node* Fun(Node* var, Node* body);
-Node* App(Node* fun, Node* arg);
+vnNode* vnVar();
+vnNode* vnFun(vnNode* var, vnNode* body);
+vnNode* vnApp(vnNode* fun, vnNode* arg);
 
-// Allocate a prim node.  The passed PrimNode must be allocated 
-// with "new" (it will be "delete"d).
-Node* Prim(PrimNode*);
+vnNode* vnPrim(vnPrimNode*);
 
+#ifdef __cplusplus
 }
+#endif
 
 #endif

@@ -3,12 +3,10 @@
 #include <ostream>
 #include <set>
 
-namespace vatican {
-
 enum UplinkType { UPLINK_APPL, UPLINK_APPR, UPLINK_NA };
 
 struct Uplink {
-    Node* link;
+    vnNode* link;
     UplinkType type;
     Uplink* prev;
     Uplink* next;
@@ -23,7 +21,7 @@ struct UplinkSet {
     Uplink* head;
     Uplink* tail;
 
-    Uplink* add(Node* link, UplinkType type) {
+    Uplink* add(vnNode* link, UplinkType type) {
         Uplink* up = new Uplink;
         up->link = link;
         up->type = type;
@@ -53,7 +51,7 @@ struct UplinkSet {
         delete link;
     }
 
-    void unlink(Node* parent, UplinkType type) {
+    void unlink(vnNode* parent, UplinkType type) {
         Uplink* cur = head;
         while (cur) {
             if (cur->link == parent && cur->type == type) {
@@ -67,47 +65,49 @@ struct UplinkSet {
 };
 
 struct AppNode {
-    Node* left;
-    Node* right;
+    vnNode* left;
+    vnNode* right;
 };
 
 struct LambdaNode {
-    Node* body;
-    Node* var;
+    vnNode* body;
+    vnNode* var;
 };
 
 struct VarNode { };
 
+struct vnPrimNode {
+    virtual ~vnPrimNode() { }
+
+    // If you store the head, you must copy it!
+    virtual vnPrimNode* apply(vnHead* other) const = 0;
+};
+
 enum NodeType { NODE_APP, NODE_LAMBDA, NODE_VAR, NODE_PRIM };
 
-class Node {
-  public:
-    Node* cache;
+struct vnNode {
+    vnNode* cache;
     UplinkSet uplinks;
     NodeType type;
     union {
         AppNode app;
         LambdaNode lambda;
         VarNode var;
-        PrimNode* prim;
+        vnPrimNode* prim;
     };
 };
 
-class Head {
-  public:
-    Node* dummy;
+struct vnHead {
+    vnNode* dummy;
 };
 
-void empty() { }
-void (*post_red_hook)() = &empty;
-
-static void upcopy(Node* newchild, Node* into, UplinkType type) {
-    Node* newNode;
+static void upcopy(vnNode* newchild, vnNode* into, UplinkType type) {
+    vnNode* newNode;
 
     switch (into->type) {
         case NODE_APP: {
             if (into->cache == 0) {
-                newNode = new Node;
+                newNode = new vnNode;
                 newNode->type = NODE_APP;
                 newNode->cache = 0;
                 // don't install uplinks when creating app nodes,
@@ -136,18 +136,18 @@ static void upcopy(Node* newchild, Node* into, UplinkType type) {
             break;
         }
         case NODE_LAMBDA: {
-            if (into->cache == (Node*)~0) { // special terminal condition
+            if (into->cache == (vnNode*)~0) { // special terminal condition
                 return; 
             } 
 
             // allocate a fresh variable node for the new lambda 
-            Node* newVar = new Node;
+            vnNode* newVar = new vnNode;
             newVar->type = NODE_VAR;
             newVar->var = VarNode();
             newVar->cache = 0;
             
             // prepare the new lambda node
-            newNode = new Node;
+            newNode = new vnNode;
             newNode->type = NODE_LAMBDA;
             newNode->lambda.body = newchild;
             newNode->lambda.var = newVar;
@@ -179,7 +179,7 @@ static void upcopy(Node* newchild, Node* into, UplinkType type) {
     }
 }
 
-static void clear(Node* node) {
+static void clear(vnNode* node) {
     Uplink* cur = node->uplinks.head;
     while (cur) {
         if (cur->link->cache == 0) {
@@ -209,7 +209,7 @@ static void clear(Node* node) {
     }
 }
 
-static void cleanup(Node* node) {
+static void cleanup(vnNode* node) {
     if (node->uplinks.head != 0) return;
 
     switch (node->type) {
@@ -240,18 +240,18 @@ static void cleanup(Node* node) {
     }
 }
 
-static void upreplace(Node* newchild, Node* into, UplinkType type) {
+static void upreplace(vnNode* newchild, vnNode* into, UplinkType type) {
     switch (into->type) {
         case NODE_APP: {
             if (type == UPLINK_APPL) { 
-                Node* old = into->app.left;
+                vnNode* old = into->app.left;
                 old->uplinks.unlink(into, UPLINK_APPL);
                 into->app.left = newchild;
                 newchild->uplinks.add(into, UPLINK_APPL);
                 cleanup(old);
             }
             else {
-                Node* old = into->app.right;
+                vnNode* old = into->app.right;
                 old->uplinks.unlink(into, UPLINK_APPR);
                 into->app.right = newchild;
                 newchild->uplinks.add(into, UPLINK_APPR);
@@ -260,7 +260,7 @@ static void upreplace(Node* newchild, Node* into, UplinkType type) {
             break;
         }
         case NODE_LAMBDA: {
-            Node* old = into->lambda.body;
+            vnNode* old = into->lambda.body;
             old->uplinks.unlink(into, UPLINK_NA);
             into->lambda.body = newchild;
             newchild->uplinks.add(into, UPLINK_NA);
@@ -271,16 +271,16 @@ static void upreplace(Node* newchild, Node* into, UplinkType type) {
     }
 }
 
-static Node* beta_reduce(Node* app) {
-    Node* fun = app->app.left;
-    Node* arg = app->app.right;
+static vnNode* beta_reduce(vnNode* app) {
+    vnNode* fun = app->app.left;
+    vnNode* arg = app->app.right;
     
-    Node* result;
+    vnNode* result;
     if (fun->lambda.var->uplinks.head == 0) {
         result = fun->lambda.body;
     }
     else {
-        fun->cache = (Node*)~0x0;  // special code for where to stop
+        fun->cache = (vnNode*)~0x0;  // special code for where to stop
         
         upcopy(arg, fun->lambda.var, UPLINK_NA);
 
@@ -296,24 +296,23 @@ static Node* beta_reduce(Node* app) {
         cur = nexty;
     }
 
-    post_red_hook();
     return result;
 }
 
-static Node* prim_reduce(Node* app) {
-    Node* fun = app->app.left;
-    Node* arg = app->app.right;
+static vnNode* prim_reduce(vnNode* app) {
+    vnNode* fun = app->app.left;
+    vnNode* arg = app->app.right;
 
-    Head* arghead = make_head(arg);
-    PrimNode* p = fun->prim->apply(arghead);
-    free_head(arghead);
+    vnHead* arghead = vnMakeHead(arg);
+    vnPrimNode* p = fun->prim->apply(arghead);
+    vnFreeHead(arghead);
 
     if (p == 0) {
         // didn't reduce
         return 0;
     }
     else {
-        Node* result = new Node;
+        vnNode* result = new vnNode;
         result->cache = 0;
         result->type = NODE_PRIM;
         result->prim = p;
@@ -325,12 +324,11 @@ static Node* prim_reduce(Node* app) {
             cur = nexty;
         }
     
-        post_red_hook();
         return result;
     }
 }
 
-void hnf_reduce(Node* node) {
+static void hnf_reduce(vnNode* node) {
 tailcall:
     switch (node->type) {
         case NODE_LAMBDA: {
@@ -344,7 +342,7 @@ tailcall:
                 goto tailcall;
             }
             else if (node->app.left->type == NODE_PRIM) {
-                Node* newnode = prim_reduce(node);
+                vnNode* newnode = prim_reduce(node);
                 if (newnode == 0) { return; }
                 else { node = newnode; goto tailcall; }
             }
@@ -359,11 +357,11 @@ tailcall:
     }
 }
 
-void hnf_reduce(Head* top) {
+void vnReduceHNF(vnHead* top) {
     hnf_reduce(top->dummy);
 }
 
-static void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
+static void dotify_rec(vnNode* top, std::ostream& stream, std::set<vnNode*>* seen) {
     if (seen->find(top) != seen->end()) return;
     seen->insert(top);
 
@@ -390,7 +388,7 @@ static void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
             break;
         }
         case NODE_PRIM: {
-            stream << "p" << top << " [label=\"" << top->prim->repr() << "\"];\n";
+            stream << "p" << top << " [label=\"" << "PRIM" << "\"];\n";
             break;
         }
         default: std::abort();
@@ -403,8 +401,8 @@ static void dotify_rec(Node* top, std::ostream& stream, std::set<Node*>* seen) {
     }
 }
 
-void dotify(Head* top, std::ostream& stream) {
-    std::set<Node*> set;
+static void dotify(vnHead* top, std::ostream& stream) {
+    std::set<vnNode*> set;
     stream << "digraph Lambda {\n";
     stream << "p" << top->dummy << " [label=\"HEAD\"];\n";
     stream << "p" << top->dummy << " -> p" << top->dummy->lambda.body << ";\n";
@@ -413,32 +411,32 @@ void dotify(Head* top, std::ostream& stream) {
     stream << "}\n";
 }
 
-Head* make_head(Node* body) {
-    Head* ret = new Head;
-    ret->dummy = Fun(Var(), body);
+vnHead* vnMakeHead(vnNode* body) {
+    vnHead* ret = new vnHead;
+    ret->dummy = vnFun(vnVar(), body);
     return ret;
 }
 
-Head* copy_head(Head* other) {
-    Head* ret = new Head;
-    ret->dummy = Fun(Var(), other->dummy);
+vnHead* vnCopyHead(vnHead* other) {
+    vnHead* ret = new vnHead;
+    ret->dummy = vnFun(vnVar(), other->dummy);
     return ret;
 }
 
-void free_head(Head* head) {
+void vnFreeHead(vnHead* head) {
     cleanup(head->dummy);
     delete head;
 }
 
-Node* Var() {
-    Node* ret = new Node;
+vnNode* vnVar() {
+    vnNode* ret = new vnNode;
     ret->type = NODE_VAR;
     ret->cache = 0;
     return ret;
 }
 
-Node* Fun(Node* var, Node* body) {
-    Node* ret = new Node;
+vnNode* vnFun(vnNode* var, vnNode* body) {
+    vnNode* ret = new vnNode;
     ret->type = NODE_LAMBDA;
     ret->lambda.body = body;
     ret->lambda.var = var;
@@ -447,8 +445,8 @@ Node* Fun(Node* var, Node* body) {
     return ret;
 }
 
-Node* App(Node* left, Node* right) {
-    Node* ret = new Node;
+vnNode* vnApp(vnNode* left, vnNode* right) {
+    vnNode* ret = new vnNode;
     ret->type = NODE_APP;
     ret->app.left = left;
     ret->app.right = right;
@@ -458,19 +456,39 @@ Node* App(Node* left, Node* right) {
     return ret;
 }
 
-Node* Prim(PrimNode* node) {
-    Node* r = new Node;
+vnNode* vnPrim(vnPrimNode* node) {
+    vnNode* r = new vnNode;
     r->type = NODE_PRIM;
     r->cache = 0;
     r->prim = node;
     return r;
 }
 
-PrimNode* get_prim(Head* expr) {
+class VTablePrimNode : public vnPrimNode {
+    void* data;
+    vnApplyCallback* applyCB;
+    vnCleanupCallback* cleanupCB;
+public:
+    VTablePrimNode(void* data, vnApplyCallback applycb, vnCleanupCallback cleanupcb)
+        : data(data), applyCB(applycb), cleanupCB(cleanupcb)
+    { }
+
+    ~VTablePrimNode() {
+        if (cleanupCB != 0) { cleanupCB(data); }
+    }
+    
+    vnPrimNode* apply(vnHead* other) const {
+        return applyCB(data, other);
+    }
+};
+
+vnPrimNode* vnMakePrim(void* data, vnApplyCallback apply, vnCleanupCallback cleanup) {
+    return new VTablePrimNode(data, apply, cleanup);
+}
+
+vnPrimNode* vnGetPrim(vnHead* expr) {
     if (expr->dummy->type != NODE_LAMBDA || expr->dummy->lambda.body->type != NODE_PRIM) {
         return 0;
     }
     return expr->dummy->lambda.body->prim;
-}
-
 }

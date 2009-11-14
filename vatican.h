@@ -1,9 +1,6 @@
 #ifndef __VATICAN_H__
 #define __VATICAN_H__
 
-#include <ios>
-#include <string>
-
 // A Bottom-up beta Substituor
 // ---------------------------
 //

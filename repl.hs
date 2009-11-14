@@ -10,7 +10,7 @@ import qualified Data.DList as DList
 import System.Process (system)
 import Data.Char (chr)
 
-type ASTM = ReaderT (Map.Map Integer Int) (State Integer)
+type ASTM = ReaderT (Map.Map Int Int) (State Int)
 newtype AST = AST { unAST :: ASTM Term }
 
 -- De bruijn variables
@@ -18,11 +18,13 @@ data Term
     = TVar Int
     | TFun Term
     | TApp Term Term
+    | TLet Int Term Term
+    | TLetRef Int
     | TPrimInt32 Int
     | TPrimPlus
     deriving Show
 
-alloc :: ASTM Integer
+alloc :: ASTM Int
 alloc = do
     x <- lift get
     lift (put $! x+1)
@@ -35,9 +37,15 @@ fun f = AST $ do
         var = asks (TVar . (Map.! vid))
     local (Map.insert vid 0 . Map.map (+1)) . fmap TFun $ unAST (f (AST var))
 
-infixl 9 %
+let_ :: AST -> (AST -> AST) -> AST
+let_ e f = AST $ do
+    lid <- alloc
+    binding <- unAST e
+    value <- unAST . f . AST $ return (TLetRef lid)
+    return $ TLet lid binding value
+
 (%) :: AST -> AST -> AST
-AST t % AST u = AST $ liftM2 TApp t u
+t % u = AST $ liftM2 TApp (unAST t) (unAST u)
 
 int :: Int -> AST
 int = AST . return . TPrimInt32
@@ -55,8 +63,10 @@ toBytes = DList.toList . go
                 | otherwise = error "Nesting too deep (sorry)"
     go (TFun t) = 0 `DList.cons` go t
     go (TApp l r) = 1 `DList.cons` (go l `DList.append` go r)
-    go (TPrimInt32 z) = 3 `DList.cons` DList.fromList (intToMSB z)
-    go TPrimPlus = DList.singleton 4
+    go (TLet z b v) = 3 `DList.cons` DList.concat [DList.fromList (intToMSB z), go b, go v]
+    go (TLetRef z) = 4 `DList.cons` DList.fromList (intToMSB z)
+    go (TPrimInt32 z) = 5 `DList.cons` DList.fromList (intToMSB z)
+    go TPrimPlus = DList.singleton 6
 
 interp :: AST -> IO ()
 interp ast = do

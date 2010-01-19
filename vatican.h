@@ -20,6 +20,7 @@ typedef vnPrimNode* vnApplyCallback(void* data, vnHead* arg);
 typedef void vnCleanupCallback(void* data);
 
 vnPrimNode* vnMakePrim(void* data, vnApplyCallback apply, vnCleanupCallback cleanup);
+void* vnGetPrimData(vnPrimNode* prim);
 
 // Reduce a term to head normal form.  Can infinite loop.
 void vnReduceHNF(vnHead*);

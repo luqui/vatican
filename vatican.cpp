@@ -465,10 +465,10 @@ vnNode* vnPrim(vnPrimNode* node) {
 }
 
 class VTablePrimNode : public vnPrimNode {
+public:
     void* data;
     vnApplyCallback* applyCB;
     vnCleanupCallback* cleanupCB;
-public:
     VTablePrimNode(void* data, vnApplyCallback applycb, vnCleanupCallback cleanupcb)
         : data(data), applyCB(applycb), cleanupCB(cleanupcb)
     { }
@@ -484,6 +484,11 @@ public:
 
 vnPrimNode* vnMakePrim(void* data, vnApplyCallback apply, vnCleanupCallback cleanup) {
     return new VTablePrimNode(data, apply, cleanup);
+}
+
+// only makes sense from the C interface
+void* vnGetPrimData(vnPrimNode* prim) {
+    return ((VTablePrimNode*)prim)->data;
 }
 
 vnPrimNode* vnGetPrim(vnHead* expr) {

@@ -2,6 +2,8 @@ import Control.Monad.Trans
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Writer
 import Data.List (intercalate)
+import qualified Data.Map as Map
+import Data.Char (isNumber)
 
 data Var
     = VVar String
@@ -23,13 +25,13 @@ showTerm (TApp t v) = "(" ++ showTerm t ++ " " ++ showVar v ++ ")"
 showTerm (TLam v b) = "(\\" ++ v ++ ". " ++ showVar b ++ ")"
 showTerm (TLet v t b) = "let " ++ showVar v ++ " = " ++ showTerm t ++ " in " ++ showTerm b
 
-
-
 instance Show Var where
     show = showVar
 
 instance Show Term where
     show = showTerm
+
+
 
 data Expr
     = ELam String Expr
@@ -41,6 +43,7 @@ infixl 9 %
 (%) = EApp
 lam = ELam
 var = EVar
+prim = EPrim
 
 
 
@@ -64,10 +67,20 @@ compile = go []
 fresh name = do
     n <- get
     put (n+1)
-    return $ name ++ "'" ++ show n
+    let name' = reverse . dropWhile isNumber . reverse $ name
+    return $ name' ++ show n
 
 
-type Env = [(Var, Term)]
+data Env = Env {
+    envVarMap :: Map.Map String Term,
+    envCxMap :: Map.Map String ([String], Term)
+}
+
+insertVar :: String -> Term -> Env -> Env
+insertVar v t e = e { envVarMap = Map.insert v t (envVarMap e) }
+
+insertCx :: String -> [String] -> Term -> Env -> Env
+insertCx z zs t e = e { envCxMap = Map.insert z (zs,t) (envCxMap e) }
 
 eval :: Env -> Term -> WriterT [(Env, Term)] (State Int) (Env, Term)
 eval = trace go
@@ -77,20 +90,21 @@ eval = trace go
         (env',t') <- eval env t
         case t' of
             TLam y b' -> do
-                (env'', v) <- eval ((VVar y, TVar b) : env') (TVar b')
+                (env'', v) <- eval (insertVar y (TVar b) env') (TVar b')
                 return (env'', v)
             x -> return (env', TApp x b)
-    go env (TLet b u t) = eval ((b, u) : env) t 
+    go env (TLet (VVar v) u t) = eval (insertVar v u env) t 
+    go env (TLet (VCx z zs) u t) = eval (insertCx z zs u env) t
     go env (TVar (VCx z ys)) = do
         let (xs, t) = lookupCx z env
         (env', v) <- eval env t
         v' <- lift (freshify v)
-        eval ((VCx z xs,v):env') (subst (zip xs ys) v')
+        eval (insertCx z xs v env') (subst (zip xs ys) v')
     go env (TVar (VVar x)) = do
         case lookupVar x env of
             Just t -> do 
                 (env',u) <- eval env t
-                eval ((VVar x,u) : env') u
+                eval (insertVar x u env') u
             Nothing -> return (env, TVar (VVar x))
 
     trace w e t = do
@@ -125,24 +139,28 @@ substVar m (VCx z xs) = VCx z (map (substName m) xs)
 substName :: [(String,String)] -> String -> String
 substName m x = maybe x id (lookup x m)
 
-lookupCx :: String -> [(Var, a)] -> ([String], a)
-lookupCx z [] = error $ "Context '" ++ z ++ "' not in environment!"
-lookupCx z ((VCx z' zs,a):envs)  | z == z' = (zs, a)
-lookupCx z (env:envs) = lookupCx z envs
+lookupCx :: String -> Env -> ([String], Term)
+lookupCx z e = 
+    case Map.lookup z (envCxMap e) of
+        Just r -> r
+        Nothing -> error $ "Context '" ++ z ++ "' not in environment!"
 
-lookupVar :: String -> [(Var, a)] -> Maybe a
-lookupVar v [] = Nothing
-lookupVar v ((VVar v',a) : envs) | v == v' = Just a
-lookupVar v (env:envs) = lookupVar v envs
+lookupVar :: String -> Env -> Maybe Term
+lookupVar v e = Map.lookup v (envVarMap e)
 
 run :: Expr -> [(Env,Term)]
 run expr = evalState go 0
     where
     go = do
         term <- compile expr
-        execWriterT (eval [] term)
+        execWriterT (eval (Env Map.empty Map.empty) term)
 
 printE :: (Env,Term) -> String
-printE (env,term) = intercalate "\n" (map printMapping env) ++ "\n-----\n" ++ show term ++ "\n\n"
+printE (env,term) = 
+       intercalate "\n" (map showC (Map.assocs (envCxMap  env))) ++ "\n"
+    ++ intercalate "\n" (map showV (Map.assocs (envVarMap env))) ++ "\n"
+    ++ "-----\n" 
+    ++ show term ++ "\n\n"
     where
-    printMapping (a,b) = show a ++ " -> " ++ show b
+    showV (a,b) = a ++ " -> " ++ show b
+    showC (z,(zs,t)) = show (VCx z zs) ++ " -> " ++ show t

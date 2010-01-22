@@ -78,8 +78,12 @@ data Env = Env {
 insertVar :: String -> Term -> Env -> Env
 insertVar v t e = e { envVarMap = Map.insert v t (envVarMap e) }
 
+deleteVar v e = e { envVarMap = Map.delete v (envVarMap e) }
+
 insertCx :: String -> [String] -> Term -> Env -> Env
 insertCx z zs t e = e { envCxMap = Map.insert z (zs,t) (envCxMap e) }
+
+deleteCx z e = e { envCxMap = Map.delete z (envCxMap e) }
 
 eval :: Env -> Term -> WriterT [(Env, Term)] (State Int) (Env, Term)
 eval = trace go
@@ -96,13 +100,13 @@ eval = trace go
     go env (TLet (VCx z zs) u t) = eval (insertCx z zs u env) t
     go env (TVar (VCx z ys)) = do
         let (xs, t) = lookupCx z env
-        (env', v) <- eval env t
+        (env', v) <- eval (deleteCx z env) t
         v' <- lift (freshify v)
         eval (insertCx z xs v env') (subst (zip xs ys) v')
     go env (TVar (VVar x)) = do
         case lookupVar x env of
             Just t -> do 
-                (env',u) <- eval env t
+                (env',u) <- eval (deleteVar x env) t
                 eval (insertVar x u env') u
             Nothing -> return (env, TVar (VVar x))
 
@@ -163,3 +167,21 @@ printE (env,term) =
     where
     showV (a,b) = a ++ " -> " ++ show b
     showC (z,(zs,t)) = show (VCx z zs) ++ " -> " ++ show t
+
+
+-- an HOAS evaluator
+
+ww_ = lam "x" (var "x" % var "x") % lam "x" (var "x" % var "x")
+
+lam_ = lam "f" $ lam "lam" $ lam "app" $ lam "var" $ var "lam" % var "f"
+app_ = lam "a" $ lam "b" $ lam "lam" $ lam "app" $ lam "var" $ var "app" % var "a" % var "b"
+var_ = lam "x" $ lam "lam" $ lam "app" $ lam "var" $ var "var" % var "x"
+fix_ = lam "f" $ (lam "x" (var "x" % var "x")) % (lam "x" (var "f" % (var "x" % var "x")))
+
+eval_ = fix_ % (lam "eval" $ lam "e" $ var "e" % (lam "f" $ lam "x" $ var "eval" % (var "f" % (var_ % var "x")))
+                                               % (lam "a" $ lam "b" $ var "eval" % var "a" % (var "eval" % var "b"))
+                                               % (lam "x" $ var "x"))
+
+i__ = var "lam" % (lam "x" $ var "x")
+ii__ = (lam "lam" $ lam "app" $ var "app" % i__ % i__) % lam_ % app_
+evalii_ = eval_ % ii__

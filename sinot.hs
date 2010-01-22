@@ -43,7 +43,6 @@ infixl 9 %
 (%) = EApp
 lam = ELam
 var = EVar
-prim = EPrim
 
 
 

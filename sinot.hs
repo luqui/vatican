@@ -168,7 +168,7 @@ printE (env,term) =
     showV (a,b) = a ++ " -> " ++ show b
     showC (z,(zs,t)) = show (VCx z zs) ++ " -> " ++ show t
 
--- let Z1(f) = f in (\x. \y. x) Z1(f)
+-- (\z. (\x. \y. x) (\w. z)) I I I
 bad = lam "z" (lam "x" (lam "y" (var "x")) % (lam "w" (var "z"))) % (lam "u" (var "u")) % (lam "u" (var "u")) % (lam "u" (var "u"))
 
 -- an HOAS evaluator

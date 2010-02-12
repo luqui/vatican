@@ -1,3 +1,5 @@
+{-# LANGUAGE RecursiveDo #-}
+
 module Vatican where
 
 import Data.IORef
@@ -7,11 +9,11 @@ import Control.Monad.Trans
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Writer
 import System.Process (system)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, catMaybes)
 import Data.List (delete)
 
 data UplinkType = UplinkAppL | UplinkAppR  | UplinkLambda
-    deriving (Eq)
+    deriving (Eq, Show)
 
 type Uplink = (UplinkType, NodeRef)
 
@@ -42,13 +44,9 @@ replaceData dat node = node { nodeData = dat }
 addUplink :: Uplink -> Node -> Node
 addUplink uplink node = node { nodeUplinks = nodeUplinks node ++ [uplink] }
 
-upcopy :: NodeRef -> [Uplink] -> IO NodeRef
-upcopy newchild_ uplinks_ = do
-    ret <- newIORef Nothing
-
-    let writeUplinks :: NodeRef -> [Uplink] -> IO ()
-        writeUplinks copied [] = writeIORef ret $ Just copied
-        writeUplinks copied xs = mapM_ (recurse copied) xs
+upcopy :: NodeRef -> NodeRef -> [Uplink] -> IO NodeRef
+upcopy stop_ newchild_ uplinks_ = do
+    let writeUplinks copied xs = mapM_ (recurse copied) xs
 
         recurse :: NodeRef -> Uplink -> IO ()
         recurse newchild (uplinkType, intoref) = do
@@ -58,14 +56,16 @@ upcopy newchild_ uplinks_ = do
                 Nothing -> do
                     copied <- newNodeRef =<< copy newchild uplinkType into
                     writeIORef (nodeCache into) $ Just copied
-                    writeUplinks copied (nodeUplinks into)
+                    when (stop_ /= intoref) $
+                        writeUplinks copied (nodeUplinks into)
                 Just copied -> do
                     writeIORef copied =<< newNode =<< copy newchild uplinkType =<< readIORef copied
 
     writeUplinks newchild_ uplinks_
-    clearCaches newchild_ uplinks_ 
-
-    fromJust <$> readIORef ret
+    ret <- fromJust <$> (readIORef =<< nodeCache <$> readIORef stop_)
+    clearCaches stop_ newchild_ uplinks_ 
+    return ret
+    
 
 copy :: NodeRef -> UplinkType -> Node -> IO NodeData
 copy newchild UplinkAppL into = do
@@ -77,31 +77,32 @@ copy newchild UplinkAppR into = do
 copy newchild UplinkLambda into = do
     let LambdaNode var body = nodeData into
     newvar <- newNodeRef $ VarNode
-    newbody <- upcopy newvar =<< (nodeUplinks <$> readIORef var)
+    newbody <- upcopy body newvar =<< (nodeUplinks <$> readIORef var)
     return $ LambdaNode newvar newbody
 
-clearCaches :: NodeRef -> [Uplink] -> IO ()
-clearCaches sourceref uplinks = do
+clearCaches :: NodeRef -> NodeRef -> [Uplink] -> IO ()
+clearCaches stop sourceref uplinks = do
     source <- readIORef sourceref
-    newUplinks <- mapM (\(ty,ref) -> ((,) ty) . fromJust <$> (readIORef =<< nodeCache <$> readIORef ref)) uplinks
+    newUplinks <- catMaybes <$> mapM (\(ty,ref) -> fmap ((,) ty) <$> (readIORef =<< nodeCache <$> readIORef ref)) uplinks
     writeIORef (nodeCache source) Nothing
-    let source' = source { nodeUplinks = newUplinks }
-    writeIORef sourceref source'
-    forM_ uplinks $ (\(ty,ref) -> clearCaches ref =<< (nodeUplinks <$> readIORef ref))
+    when (stop /= sourceref) $ do
+        let source' = source { nodeUplinks = newUplinks }
+        writeIORef sourceref source'
+        forM_ newUplinks $ (\(ty,ref) -> clearCaches stop ref =<< (nodeUplinks <$> readIORef ref))
 
 upreplace :: NodeRef -> NodeRef -> IO ()
 upreplace newchild oldchild = do
     oldnode <- readIORef oldchild
     forM_ (nodeUplinks oldnode) $ \uplink@(typ,intoref) -> do
         into <- readIORef intoref
-        case typ of
+        newdata <- case typ of
             UplinkAppL -> let AppNode left right = nodeData into in 
                           unlink uplink left >> return (AppNode newchild right)
             UplinkAppR -> let AppNode left right = nodeData into in 
                           unlink uplink right >> return (AppNode left newchild)
             UplinkLambda -> let LambdaNode var body = nodeData into in
-                            unlink uplink body >> return (AppNode var newchild)
-        writeIORef intoref =<< flip replaceData into <$> copy newchild typ into
+                            unlink uplink body >> return (LambdaNode var newchild)
+        writeIORef intoref $ replaceData newdata into
     newnode <- readIORef newchild
     writeIORef newchild $ newnode { nodeUplinks = nodeUplinks newnode ++ nodeUplinks oldnode }
 
@@ -127,14 +128,13 @@ hnfReduce noderef = do
     node <- readIORef noderef
     case nodeData node of
         AppNode leftref rightref -> do
-            hnfReduce leftref
-            left <- readIORef leftref
+            left <- readIORef =<< hnfReduce leftref
             case nodeData left of
                 LambdaNode var body -> do
-                    partialUnlink (UplinkLambda, leftref) body
-                    partialUnlink (UplinkAppR, noderef) rightref
-                    substituted <- upcopy rightref =<< nodeUplinks <$> readIORef var
+                    substituted <- upcopy body rightref =<< nodeUplinks <$> readIORef var
                     upreplace substituted noderef
+                    unlink (UplinkAppR, noderef) rightref
+                    --unlink (UplinkLambda, leftref) body
                     return substituted
                 other -> return noderef
             

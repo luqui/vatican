@@ -154,17 +154,20 @@ graphviz noderef = do
                 (seen, ident) <- lift get
                 lift $ put ((noderef,ident):seen, ident+1)
                 node <- liftIO $ readIORef noderef
+                forM_ (nodeUplinks node) $ \(_, uplink) -> do
+                    uplinkid <- go uplink
+                    tell $ "p" ++ show ident ++ " -> p" ++ show uplinkid ++ " [weight=1,color=red];\n"
                 case nodeData node of
                     AppNode left right -> do
                         tell $ "p" ++ show ident ++ " [label=\"*\"];\n"
                         leftid <- go left
-                        tell $ "p" ++ show ident ++ " -> p" ++ show leftid ++ " [color=\"#007f00\",label=\"fv\"];\n"
+                        tell $ "p" ++ show ident ++ " -> p" ++ show leftid ++ " [weight=1,color=\"#007f00\",label=\"fv\"];\n"
                         rightid <- go right
-                        tell $ "p" ++ show ident ++ " -> p" ++ show rightid ++ " [label=\"av\"];\n"
+                        tell $ "p" ++ show ident ++ " -> p" ++ show rightid ++ " [weight=1,label=\"av\"];\n"
                     LambdaNode var body -> do
                         tell $ "p" ++ show ident ++ " [label=\"\\\\\"];\n"
                         bodyid <- go body
-                        tell $ "p" ++ show ident ++ " -> p" ++ show bodyid ++ ";\n"
+                        tell $ "p" ++ show ident ++ " -> p" ++ show bodyid ++ " [weight=1];\n"
                         varid <- go var
                         tell $ "p" ++ show ident ++ " -> p" ++ show varid ++ " [weight=0,color=blue];\n"
                     VarNode -> do
@@ -178,17 +181,19 @@ runGraphviz node = do
     system "eog graph.png"
     return ()
 
-app :: NodeRef -> NodeRef -> IO NodeRef
+app :: IO NodeRef -> IO NodeRef -> IO NodeRef
 app left right = do
-    newref <- newNodeRef $ AppNode left right
-    modifyIORef left (addUplink (UplinkAppL, newref))
-    modifyIORef right (addUplink (UplinkAppR, newref))
+    left' <- left
+    right' <- right
+    newref <- newNodeRef $ AppNode left' right'
+    modifyIORef left' (addUplink (UplinkAppL, newref))
+    modifyIORef right' (addUplink (UplinkAppR, newref))
     return newref
 
-fun :: (NodeRef -> IO NodeRef) -> IO NodeRef
+fun :: (IO NodeRef -> IO NodeRef) -> IO NodeRef
 fun bodyf = do
     var <- newNodeRef $ VarNode
-    body <- bodyf var
+    body <- bodyf (return var)
     newref <- newNodeRef $ LambdaNode var body
     modifyIORef body (addUplink (UplinkLambda, newref))
     return newref

@@ -63,32 +63,42 @@ upcopy stop_ newchild_ uplinks_ = do
 
     writeUplinks newchild_ uplinks_
     ret <- fromJust <$> (readIORef =<< nodeCache <$> readIORef stop_)
-    clearCaches stop_ newchild_ uplinks_ 
+    clearCaches uplinks_ 
     return ret
     
 
 copy :: NodeRef -> UplinkType -> Node -> IO NodeData
 copy newchild UplinkAppL into = do
     let AppNode left right = nodeData into
-    return $ AppNode left newchild
+    return $ AppNode newchild right
 copy newchild UplinkAppR into = do
     let AppNode left right = nodeData into
-    return $ AppNode newchild right
+    return $ AppNode left newchild
 copy newchild UplinkLambda into = do
     let LambdaNode var body = nodeData into
     newvar <- newNodeRef $ VarNode
     newbody <- upcopy body newvar =<< (nodeUplinks <$> readIORef var)
     return $ LambdaNode newvar newbody
 
-clearCaches :: NodeRef -> NodeRef -> [Uplink] -> IO ()
-clearCaches stop sourceref uplinks = do
-    source <- readIORef sourceref
-    newUplinks <- catMaybes <$> mapM (\(ty,ref) -> fmap ((,) ty) <$> (readIORef =<< nodeCache <$> readIORef ref)) uplinks
-    writeIORef (nodeCache source) Nothing
-    when (stop /= sourceref) $ do
-        let source' = source { nodeUplinks = newUplinks }
-        writeIORef sourceref source'
-        forM_ newUplinks $ (\(ty,ref) -> clearCaches stop ref =<< (nodeUplinks <$> readIORef ref))
+clearCaches :: [Uplink] -> IO ()
+clearCaches uplinks = forM_ uplinks $ \(ty,ref) -> do
+    maybeCacheref <- nodeCache <$> readIORef ref
+    maybeCache <- readIORef maybeCacheref
+    case maybeCache of
+        Nothing -> return ()
+        Just cacheref -> do
+            cache <- readIORef cacheref
+            case nodeData cache of
+                AppNode leftref rightref -> do
+                    modifyIORef leftref (addUplink (UplinkAppL, cacheref))
+                    modifyIORef rightref (addUplink (UplinkAppR, cacheref))
+                    writeIORef maybeCacheref Nothing
+                LambdaNode var bodyref -> do
+                    modifyIORef bodyref (addUplink (UplinkLambda, cacheref))
+                    writeIORef maybeCacheref Nothing
+                    clearCaches =<< nodeUplinks <$> readIORef var
+                VarNode -> error "Can't clear variables, stupid"
+            clearCaches =<< nodeUplinks <$> readIORef ref
 
 upreplace :: NodeRef -> NodeRef -> IO ()
 upreplace newchild oldchild = do
@@ -100,7 +110,7 @@ upreplace newchild oldchild = do
                           unlink uplink left >> return (AppNode newchild right)
             UplinkAppR -> let AppNode left right = nodeData into in 
                           unlink uplink right >> return (AppNode left newchild)
-            UplinkLambda -> let LambdaNode var body = nodeData into in
+            UplinkLambda -> let LambdaNode var body = nodeData into in do
                             unlink uplink body >> return (LambdaNode var newchild)
         writeIORef intoref $ replaceData newdata into
     newnode <- readIORef newchild
@@ -135,15 +145,15 @@ hnfReduce noderef = do
                     upreplace substituted noderef
                     unlink (UplinkAppR, noderef) rightref
                     --unlink (UplinkLambda, leftref) body
-                    return substituted
+                    hnfReduce substituted
                 other -> return noderef
             
         LambdaNode var body -> hnfReduce body >> return noderef
         VarNode -> return noderef
 
 graphviz :: NodeRef -> IO String
-graphviz noderef = do
-    output <- evalStateT (execWriterT (go noderef)) ([], 0)
+graphviz noderef_ = do
+    output <- evalStateT (execWriterT (go noderef_)) ([], 0)
     return $ "digraph Lambda {\n" ++ output ++ "}\n"
     where
     go noderef = do
@@ -154,24 +164,32 @@ graphviz noderef = do
                 (seen, ident) <- lift get
                 lift $ put ((noderef,ident):seen, ident+1)
                 node <- liftIO $ readIORef noderef
-                forM_ (nodeUplinks node) $ \(_, uplink) -> do
+                let color | noderef == noderef_ = "blue"
+                          | otherwise           = "black"
+                forM_ (nodeUplinks node) $ \(ty, uplink) -> do
                     uplinkid <- go uplink
                     tell $ "p" ++ show ident ++ " -> p" ++ show uplinkid ++ " [weight=1,color=red];\n"
                 case nodeData node of
                     AppNode left right -> do
-                        tell $ "p" ++ show ident ++ " [label=\"*\"];\n"
+                        tell $ "p" ++ show ident ++ " [label=\"*\",color=" ++ color ++ "];\n"
                         leftid <- go left
                         tell $ "p" ++ show ident ++ " -> p" ++ show leftid ++ " [weight=1,color=\"#007f00\",label=\"fv\"];\n"
                         rightid <- go right
                         tell $ "p" ++ show ident ++ " -> p" ++ show rightid ++ " [weight=1,label=\"av\"];\n"
                     LambdaNode var body -> do
-                        tell $ "p" ++ show ident ++ " [label=\"\\\\\"];\n"
+                        tell $ "p" ++ show ident ++ " [label=\"\\\\\",color=" ++ color ++ "];\n"
                         bodyid <- go body
                         tell $ "p" ++ show ident ++ " -> p" ++ show bodyid ++ " [weight=1];\n"
                         varid <- go var
                         tell $ "p" ++ show ident ++ " -> p" ++ show varid ++ " [weight=0,color=blue];\n"
                     VarNode -> do
                         tell $ "p" ++ show ident ++ " [label=\"x\"];\n"
+                cache <- liftIO . readIORef $ nodeCache node
+                case cache of
+                    Just cacher -> do
+                        cacheid <- go cacher
+                        tell $ "p" ++ show ident ++ " -> p" ++ show cacheid ++ " [weight=0,style=dotted];\n"
+                    Nothing -> return ()
                 return ident
 
 runGraphviz :: NodeRef -> IO ()

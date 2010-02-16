@@ -2,7 +2,7 @@
 
 module Vatican 
     ( Primitive(..)
-    , eval
+    , Term, eval
     , (%), fun, prim, let_
     )
 where
@@ -196,6 +196,8 @@ hnfReduce noderef = do
                         PrimNode p' -> do
                             result <- newNodeRef $ PrimNode (p `apply` p')
                             mapM_ (upreplace result) =<< nodeUplinks <$> readIORef noderef
+                        _ -> return ()
+                _ -> return ()
         _ -> return ()
 
 graphviz :: (Primitive a) => NodeRef a -> IO String

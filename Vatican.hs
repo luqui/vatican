@@ -16,23 +16,23 @@ import Data.List (delete)
 data UplinkType = UplinkAppL | UplinkAppR | UplinkLambda | UplinkVar
     deriving (Eq)
 
-type Uplink = (UplinkType, NodeRef)
+type Uplink a = (UplinkType, NodeRef a)
 
-data NodeData
-    = AppNode NodeRef NodeRef
-    | LambdaNode NodeRef NodeRef
+data NodeData a
+    = AppNode (NodeRef a) (NodeRef a)
+    | LambdaNode (NodeRef a) (NodeRef a)
     | VarNode
 
-data Node = Node {
-    nodeCache :: Maybe NodeRef,
-    nodeUplinks :: [Uplink],
-    nodeData :: NodeData
+data Node a = Node {
+    nodeCache :: Maybe (NodeRef a),
+    nodeUplinks :: [Uplink a],
+    nodeData :: NodeData a
   }
 
-type NodeRef = IORef Node
+type NodeRef a = IORef (Node a)
 
 
-upcopy :: NodeRef -> NodeRef -> Uplink -> IO ()
+upcopy :: NodeRef a -> NodeRef a -> Uplink a -> IO ()
 upcopy stop newchild (uplinkType, intoref) | intoref == stop = return ()
                                            | otherwise = do
     into <- readIORef intoref
@@ -62,43 +62,43 @@ upcopy stop newchild (uplinkType, intoref) | intoref == stop = return ()
             setCache intoref (Just newchild)
             traverse newchild
 
-setCache :: NodeRef -> Maybe NodeRef -> IO ()
+setCache :: NodeRef a -> Maybe (NodeRef a) -> IO ()
 setCache ref newcache = modifyIORef ref (\n -> n { nodeCache = newcache })
 
-newNodeRef :: NodeData -> IO NodeRef
+newNodeRef :: NodeData a -> IO (NodeRef a)
 newNodeRef dat = newIORef $ Node { nodeCache = Nothing, nodeUplinks = [], nodeData = dat }
 
-replaceLeft :: NodeRef -> NodeRef -> IO ()
+replaceLeft :: NodeRef a -> NodeRef a -> IO ()
 replaceLeft newchild node = modifyIORef node $ \n -> n { nodeData = go (nodeData n) }
     where
     go (AppNode l r) = AppNode newchild r
 
-replaceRight :: NodeRef -> NodeRef -> IO ()
+replaceRight :: NodeRef a -> NodeRef a -> IO ()
 replaceRight newchild node = modifyIORef node $ \n -> n { nodeData = go (nodeData n) }
     where
     go (AppNode l r) = AppNode l newchild
 
-replaceBody :: NodeRef -> NodeRef -> IO ()
+replaceBody :: NodeRef a -> NodeRef a -> IO ()
 replaceBody newchild node = modifyIORef node $ \n -> n { nodeData = go (nodeData n) }
     where
     go (LambdaNode v b) = LambdaNode v newchild
 
-addUplink :: Uplink -> NodeRef -> IO ()
+addUplink :: Uplink a -> NodeRef a -> IO ()
 addUplink uplink node = modifyIORef node $ \n -> n { nodeUplinks = uplink : nodeUplinks n }
 
-deleteUplink :: Uplink -> NodeRef -> IO ()
+deleteUplink :: Uplink a -> NodeRef a -> IO ()
 deleteUplink uplink node = modifyIORef node $ \n -> n { nodeUplinks = delete uplink (nodeUplinks n) }
 
-getLeft :: NodeRef -> IO NodeRef
+getLeft :: NodeRef a -> IO (NodeRef a)
 getLeft ref = (\(AppNode l r) -> l) . nodeData <$> readIORef ref
 
-getRight :: NodeRef -> IO NodeRef
+getRight :: NodeRef a -> IO (NodeRef a)
 getRight ref = (\(AppNode l r) -> r) . nodeData <$> readIORef ref
 
-getBody :: NodeRef -> IO NodeRef
+getBody :: NodeRef a -> IO (NodeRef a)
 getBody ref = (\(LambdaNode _ b) -> b) . nodeData <$> readIORef ref
 
-clear :: NodeRef -> IO ()
+clear :: NodeRef a -> IO ()
 clear noderef = do
     node <- readIORef noderef
     forM_ (nodeUplinks node) $ \(uplinkType, uplinkRef) -> do
@@ -118,7 +118,7 @@ clear noderef = do
         clear uplinkRef
     setCache noderef Nothing
 
-cleanup :: NodeRef -> IO ()
+cleanup :: NodeRef a -> IO ()
 cleanup noderef = do
     node <- readIORef noderef
     when (null (nodeUplinks node)) $ case nodeData node of
@@ -132,7 +132,7 @@ cleanup noderef = do
             cleanup body
         _ -> return ()
 
-upreplace :: NodeRef -> Uplink -> IO ()
+upreplace :: NodeRef a -> Uplink a -> IO ()
 upreplace newchild (uplinkType, intoref) = do
     into <- readIORef intoref
     case (nodeData into, uplinkType) of
@@ -153,7 +153,7 @@ upreplace newchild (uplinkType, intoref) = do
             cleanup body
             
 
-betaReduce :: NodeRef -> IO NodeRef
+betaReduce :: NodeRef a -> IO (NodeRef a)
 betaReduce appref = do
     putStrLn "About to reduce"
     runGraphviz appref
@@ -175,7 +175,7 @@ betaReduce appref = do
     runGraphviz result
     return result
 
-hnfReduce :: NodeRef -> IO ()
+hnfReduce :: NodeRef a -> IO ()
 hnfReduce noderef = do
     node <- readIORef noderef
     case nodeData node of
@@ -188,7 +188,7 @@ hnfReduce noderef = do
                 _ -> return ()
         _ -> return ()
 
-graphviz :: NodeRef -> IO String
+graphviz :: NodeRef a -> IO String
 graphviz noderef_ = do
     output <- evalStateT (execWriterT (go noderef_)) ([], 0)
     return $ "digraph Lambda {\n" ++ output ++ "}\n"
@@ -228,14 +228,14 @@ graphviz noderef_ = do
                     Nothing -> return ()
                 return ident
 
-runGraphviz :: NodeRef -> IO ()
+runGraphviz :: NodeRef a -> IO ()
 runGraphviz node = do
     writeFile "graph.dot" =<< graphviz node
     system "dot -T png -o graph.png graph.dot"
     system "eog graph.png"
     return ()
 
-app :: IO NodeRef -> IO NodeRef -> IO NodeRef
+app :: IO (NodeRef a) -> IO (NodeRef a) -> IO (NodeRef a)
 app left right = do
     left' <- left
     right' <- right
@@ -244,7 +244,7 @@ app left right = do
     addUplink (UplinkAppR, newref) right'
     return newref
 
-fun :: (IO NodeRef -> IO NodeRef) -> IO NodeRef
+fun :: (IO (NodeRef a) -> IO (NodeRef a)) -> IO (NodeRef a)
 fun bodyf = do
     var <- newNodeRef $ VarNode
     body <- bodyf (return var)

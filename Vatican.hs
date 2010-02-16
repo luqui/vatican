@@ -1,6 +1,11 @@
 {-# LANGUAGE RecursiveDo #-}
 
-module Vatican where
+module Vatican 
+    ( Primitive(..)
+    , eval
+    , (%), fun, prim, let_
+    )
+where
 
 import Data.IORef
 import Control.Monad (forM_, (<=<), when)
@@ -12,7 +17,7 @@ import System.Process (system)
 import Data.Maybe (fromJust, catMaybes)
 import Data.List (delete)
 
-class Primitive a where
+class (Show a) => Primitive a where
     apply :: a -> a -> a
 
 data UplinkType = UplinkAppL | UplinkAppR | UplinkLambda | UplinkVar
@@ -193,7 +198,7 @@ hnfReduce noderef = do
                             mapM_ (upreplace result) =<< nodeUplinks <$> readIORef noderef
         _ -> return ()
 
-graphviz :: NodeRef a -> IO String
+graphviz :: (Primitive a) => NodeRef a -> IO String
 graphviz noderef_ = do
     output <- evalStateT (execWriterT (go noderef_)) ([], 0)
     return $ "digraph Lambda {\n" ++ output ++ "}\n"
@@ -226,6 +231,8 @@ graphviz noderef_ = do
                         tell $ "p" ++ show ident ++ " -> p" ++ show varid ++ " [weight=0,color=blue];\n"
                     VarNode -> do
                         tell $ "p" ++ show ident ++ " [label=\"x\"," ++ color ++ "];\n"
+                    PrimNode x -> do
+                        tell $ "p" ++ show ident ++ " [label=\"" ++ show x ++ "\"];\n"
                 case nodeCache node of
                     Just cacher -> do
                         cacheid <- go cacher
@@ -233,15 +240,28 @@ graphviz noderef_ = do
                     Nothing -> return ()
                 return ident
 
-runGraphviz :: NodeRef a -> IO ()
+runGraphviz :: (Primitive a) => NodeRef a -> IO ()
 runGraphviz node = do
     writeFile "graph.dot" =<< graphviz node
     system "dot -T png -o graph.png graph.dot"
     system "eog graph.png"
     return ()
 
-app :: IO (NodeRef a) -> IO (NodeRef a) -> IO (NodeRef a)
-app left right = do
+eval :: (Primitive a) => Term a -> IO a
+eval t = do
+    noderef <- getTerm $ fun (\z -> t)
+    hnfReduce noderef
+    dat <- nodeData <$> (readIORef =<< getBody noderef)
+    case dat of
+        PrimNode p -> return p
+        _ -> fail "Not a primitive!"
+    
+
+newtype Term a = Term { getTerm :: IO (NodeRef a) }
+
+infixl 9 %
+(%) :: Term a -> Term a -> Term a
+Term left % Term right = Term $ do
     left' <- left
     right' <- right
     newref <- newNodeRef $ AppNode left' right'
@@ -249,10 +269,20 @@ app left right = do
     addUplink (UplinkAppR, newref) right'
     return newref
 
-fun :: (IO (NodeRef a) -> IO (NodeRef a)) -> IO (NodeRef a)
-fun bodyf = do
+fun :: (Term a -> Term a) -> Term a
+fun bodyf = Term $ do
     var <- newNodeRef $ VarNode
-    body <- bodyf (return var)
+    body <- getTerm . bodyf . Term $ return var
     newref <- newNodeRef $ LambdaNode var body
     addUplink (UplinkLambda, newref) body
     return newref
+
+prim :: a -> Term a
+prim x = Term $ do
+    newref <- newNodeRef $ PrimNode x
+    return newref
+
+let_ :: Term a -> (Term a -> Term a) -> Term a
+let_ (Term exp) bodyf = Term $ do
+    ref <- exp
+    getTerm . bodyf . Term $ return ref

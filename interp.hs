@@ -55,7 +55,3 @@ go :: (PrimTerm Value t) => t
 go = 
     let_ (fun (\n -> n % prim (VAdd 1) % prim (VInt 0))) $ \toPrim ->
     toPrim % liftInterp program
-
-varifier :: (Term t) => t -> t -> Integer -> t
-varifier zero succ 0 = zero
-varifier zero succ n = succ % varifier zero succ (n-1)

@@ -12,6 +12,8 @@ import System.Process (system)
 import Data.Maybe (fromJust, catMaybes)
 import Data.List (delete)
 
+class Primitive a where
+    apply :: a -> a -> a
 
 data UplinkType = UplinkAppL | UplinkAppR | UplinkLambda | UplinkVar
     deriving (Eq)
@@ -22,6 +24,7 @@ data NodeData a
     = AppNode (NodeRef a) (NodeRef a)
     | LambdaNode (NodeRef a) (NodeRef a)
     | VarNode
+    | PrimNode a
 
 data Node a = Node {
     nodeCache :: Maybe (NodeRef a),
@@ -155,8 +158,6 @@ upreplace newchild (uplinkType, intoref) = do
 
 betaReduce :: NodeRef a -> IO (NodeRef a)
 betaReduce appref = do
-    putStrLn "About to reduce"
-    runGraphviz appref
     app <- readIORef appref
     let AppNode leftref rightref = nodeData app
     left <- readIORef leftref
@@ -171,11 +172,9 @@ betaReduce appref = do
             clear varref
             return result
     mapM_ (upreplace result) =<< nodeUplinks <$> readIORef appref
-    putStrLn "Done reducing"
-    runGraphviz result
     return result
 
-hnfReduce :: NodeRef a -> IO ()
+hnfReduce :: (Primitive a) => NodeRef a -> IO ()
 hnfReduce noderef = do
     node <- readIORef noderef
     case nodeData node of
@@ -185,7 +184,13 @@ hnfReduce noderef = do
             left' <- readIORef =<< getLeft noderef 
             case nodeData left' of
                 LambdaNode {} -> hnfReduce =<< betaReduce noderef
-                _ -> return ()
+                PrimNode p -> do
+                    hnfReduce right
+                    right' <- readIORef =<< getRight noderef
+                    case nodeData right' of
+                        PrimNode p' -> do
+                            result <- newNodeRef $ PrimNode (p `apply` p')
+                            mapM_ (upreplace result) =<< nodeUplinks <$> readIORef noderef
         _ -> return ()
 
 graphviz :: NodeRef a -> IO String

@@ -35,12 +35,12 @@ liftInterp expr =
 
     let quote (ELam body) = mkLam % quote body
         quote (EApp l r) = mkApp % quote l % quote r
-        quote (EVar v)   = iterate (succ %) zero !! fromIntegral v in
+        quote (EVar v)   = mkVar % (iterate (succ %) zero !! fromIntegral v) in
 
     let_ (fun (\eval -> fun (\env -> fun (\term -> 
         term
-            % fun (\left -> fun (\right -> eval % env % left % (eval % env % right)))
             % fun (\body -> fun (\x -> eval % (cons % x % env) % body))
+            % fun (\left -> fun (\right -> eval % env % left % (eval % env % right)))
             % (nth % env))))) $ \preEval ->
     let_ (fix % preEval % nil) $ \eval -> 
     eval % quote (getDeBruijn expr)
@@ -54,7 +54,7 @@ program =
 go :: (PrimTerm Value t) => t
 go = 
     let_ (fun (\n -> n % prim (VAdd 1) % prim (VInt 0))) $ \toPrim ->
-    toPrim % program
+    toPrim % liftInterp program
 
 varifier :: (Term t) => t -> t -> Integer -> t
 varifier zero succ 0 = zero

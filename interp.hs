@@ -14,12 +14,23 @@ instance Vatican.Primitive Value where
     apply (VAdd x) (VInt y) = VInt (x+y)
     apply x y = error $ "Type error when applying (" ++ show x ++ ") to (" ++ show y ++ ")"
 
-liftInterp :: (Term t) => (forall u. (Term u) => u) -> t
-liftInterp expr = 
-    let_ (fun (\x -> x)) $ \id -> 
-
+quote :: (Term t) => (forall u. (Term u) => u) -> t
+quote expr = 
     let_ (fun (\f -> fun (\x -> x))) $ \zero ->
     let_ (fun (\n -> fun (\f -> fun (\x -> f % (n % f % x))))) $ \succ ->
+
+    let_ (fun (\body -> fun (\l -> fun (\a -> fun (\v -> l % (body % l % a % v)))))) $ \mkLam ->
+    let_ (fun (\left -> fun (\right -> fun (\l -> fun (\a -> fun (\v -> a % (left % l % a % v) % (right % l % a % v))))))) $ \mkApp -> 
+    let_ (fun (\num -> fun (\l -> fun (\a -> fun (\v -> v % num))))) $ \mkVar -> 
+
+    let quote (ELam body) = mkLam % quote body
+        quote (EApp l r) = mkApp % quote l % quote r
+        quote (EVar v)   = mkVar % (iterate (succ %) zero !! fromIntegral v) in
+    quote (getDeBruijn expr)
+
+interp :: (Term t) => t
+interp = 
+    let_ (fun (\x -> x)) $ \id -> 
 
     let_ (fun (\n -> fun (\c -> n))) $ \nil ->
     let_ (fun (\x -> fun (\xs -> fun (\n -> fun (\c -> c % x % xs))))) $ \cons ->
@@ -29,20 +40,12 @@ liftInterp expr =
 
     let_ (fun (\l -> fun (\n -> head % (n % tail % l)))) $ \nth -> 
     
-    let_ (fun (\body -> fun (\l -> fun (\a -> fun (\v -> l % (body % l % a % v)))))) $ \mkLam ->
-    let_ (fun (\left -> fun (\right -> fun (\l -> fun (\a -> fun (\v -> a % (left % l % a % v) % (right % l % a % v))))))) $ \mkApp -> 
-    let_ (fun (\num -> fun (\l -> fun (\a -> fun (\v -> v % num))))) $ \mkVar -> 
-
-    let quote (ELam body) = mkLam % quote body
-        quote (EApp l r) = mkApp % quote l % quote r
-        quote (EVar v)   = mkVar % (iterate (succ %) zero !! fromIntegral v) in
-
     let_ (fun (\term ->
         term % fun (\body -> fun (\env -> fun (\x -> body % (cons % x % env))))
              % fun (\left -> fun (\right -> fun (\env -> left % env % (right % env))))
              % fun (\n    -> fun (\env -> nth % env % n))
              % nil)) $ \eval -> 
-    eval % quote (getDeBruijn expr)
+    eval
 
 program :: (Term t) => t
 program = 
@@ -53,6 +56,6 @@ program =
 go :: (PrimTerm Value t) => t
 go = 
     let_ (fun (\n -> n % prim (VAdd 1) % prim (VInt 0))) $ \toPrim ->
-    toPrim % liftInterp (liftInterp (liftInterp (program)))
+    toPrim % ((((interp % quote interp) % quote interp) % quote interp) % quote program)
 
 main = print =<< Vatican.eval go

@@ -1,3 +1,5 @@
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
+
 module HOAS (Term(..), PrimTerm(..), let_, DeBruijn, getDeBruijn, Exp(..), Reference, runReference) where
 
 import qualified Vatican

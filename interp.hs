@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes, FlexibleContexts #-}
+
 import qualified Vatican
 import HOAS
 
@@ -51,4 +53,6 @@ program =
 go :: (PrimTerm Value t) => t
 go = 
     let_ (fun (\n -> n % prim (VAdd 1) % prim (VInt 0))) $ \toPrim ->
-    toPrim % liftInterp (liftInterp (liftInterp program))
+    toPrim % liftInterp (liftInterp (liftInterp (program)))
+
+main = print =<< Vatican.eval go

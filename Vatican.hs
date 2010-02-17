@@ -1,4 +1,4 @@
-{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RecursiveDo, PatternGuards #-}
 
 module Vatican 
     ( Primitive(..)
@@ -123,7 +123,7 @@ clear noderef = do
                         addUplink (UplinkLambda, cache) =<< getBody cache
                         setCache uplinkRef Nothing
                         clear var
-        clear uplinkRef
+                clear uplinkRef
     setCache noderef Nothing
 
 cleanup :: NodeRef a -> IO ()

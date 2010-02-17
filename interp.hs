@@ -2,6 +2,7 @@
 
 import qualified Vatican
 import HOAS
+import System (getArgs)
 
 data Value
     = VPlus
@@ -53,9 +54,11 @@ program =
     let_ (fun (\n -> fun (\f -> fun (\x -> f % (n % f % x))))) $ \succ ->
     succ % (succ % (succ % zero))
 
-go :: (PrimTerm Value t) => t
-go = 
+go :: Int -> (PrimTerm Value t) => t
+go n = 
     let_ (fun (\n -> n % prim (VAdd 1) % prim (VInt 0))) $ \toPrim ->
-    toPrim % ((((interp % quote interp) % quote interp) % quote interp) % quote program)
+    toPrim % (foldl (%) interp (replicate n (quote interp)) % quote program)
 
-main = print =<< Vatican.eval go
+main = do
+    [nstr] <- getArgs
+    print =<< Vatican.eval (go (read nstr))

@@ -6,6 +6,7 @@ import Control.Monad (liftM2)
 import Control.Monad.Trans
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Reader
+import Control.Applicative
 
 infixl 9 %
 class Term t where
@@ -42,19 +43,19 @@ parens True x = "(" ++ x ++ ")"
 instance Show Exp where
     show = showExp False False
 
-newtype DeBruijn = DeBruijn { rundB :: State (Map.Map Integer Integer, Integer) Exp }
+newtype DeBruijn = DeBruijn { rundB :: ReaderT (Map.Map Integer Integer) (State Integer) Exp }
 
 instance Term DeBruijn where
     DeBruijn t % DeBruijn u = DeBruijn $ liftM2 EApp t u
     fun f = DeBruijn $ do
-        (mp, varid) <- get
-        put (Map.insert varid 0 (Map.map succ mp), succ varid)
-        fmap ELam $ rundB . f . DeBruijn $ do
-            mp' <- gets fst
-            return . EVar $ mp' Map.! varid
+        varid <- lift get
+        lift $ put (succ varid)
+        local (Map.insert varid 0 . Map.map succ) $ do
+            fmap ELam . rundB . f . DeBruijn $ do
+                EVar <$> asks (Map.! varid)
 
 getDeBruijn :: DeBruijn -> Exp
-getDeBruijn dB = evalState (rundB dB) (Map.empty, 0)
+getDeBruijn dB = evalState (runReaderT (rundB dB) Map.empty) 0
 
 
 data Reference a

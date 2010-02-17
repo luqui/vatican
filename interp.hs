@@ -27,22 +27,19 @@ liftInterp expr =
 
     let_ (fun (\l -> fun (\n -> head % (n % tail % l)))) $ \nth -> 
     
-    let_ (fun (\f -> fun (\x -> x % x) % fun (\x -> f % (x % x)))) $ \fix ->
-
-    let_ (fun (\body -> fun (\l -> fun (\a -> fun (\v -> l % body))))) $ \mkLam ->
-    let_ (fun (\left -> fun (\right -> fun (\l -> fun (\a -> fun (\v -> a % left % right)))))) $ \mkApp ->
-    let_ (fun (\num -> fun (\l -> fun (\a -> fun (\v -> v % num))))) $ \mkVar ->
+    let_ (fun (\body -> fun (\l -> fun (\a -> fun (\v -> l % (body % l % a % v)))))) $ \mkLam ->
+    let_ (fun (\left -> fun (\right -> fun (\l -> fun (\a -> fun (\v -> a % (left % l % a % v) % (right % l % a % v))))))) $ \mkApp -> 
+    let_ (fun (\num -> fun (\l -> fun (\a -> fun (\v -> v % num))))) $ \mkVar -> 
 
     let quote (ELam body) = mkLam % quote body
         quote (EApp l r) = mkApp % quote l % quote r
         quote (EVar v)   = mkVar % (iterate (succ %) zero !! fromIntegral v) in
 
-    let_ (fun (\eval -> fun (\env -> fun (\term -> 
-        term
-            % fun (\body -> fun (\x -> eval % (cons % x % env) % body))
-            % fun (\left -> fun (\right -> eval % env % left % (eval % env % right)))
-            % (nth % env))))) $ \preEval ->
-    let_ (fix % preEval % nil) $ \eval -> 
+    let_ (fun (\term ->
+        term % fun (\body -> fun (\env -> fun (\x -> body % (cons % x % env))))
+             % fun (\left -> fun (\right -> fun (\env -> left % env % (right % env))))
+             % fun (\n    -> fun (\env -> nth % env % n))
+             % nil)) $ \eval -> 
     eval % quote (getDeBruijn expr)
 
 program :: (Term t) => t
@@ -54,4 +51,4 @@ program =
 go :: (PrimTerm Value t) => t
 go = 
     let_ (fun (\n -> n % prim (VAdd 1) % prim (VInt 0))) $ \toPrim ->
-    toPrim % liftInterp program
+    toPrim % liftInterp (liftInterp (liftInterp program))

@@ -1,0 +1,19 @@
+This is a codebase for experimenting with lazy specializing interpretation
+strategies.  Currently implemented are:
+
+    * Thyer's complete laziness semantics (sans memoization)
+    * Bottom up beta substitution
+
+To try it out, use measure.pl, like so:
+
+    % perl measure.pl bubs 5
+
+This runs the incredibly simple program 1+1+1+0 using the bubs (bottom up beta
+substitution) interpreter at levels of interpretation from 0 to 5.  So, for
+example, at the 3rd level, it is running an interpreter running an interpreter
+running an interpreter running 1+1+1+0.  
+
+The other options are "thyer" and "ref".  "ref" is a simple embedding of HOAS
+into Haskell, running (asymptotically) at the speed Haskell would run this code.
+
+Here you can see thyer kick the pants off the other two.

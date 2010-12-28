@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 
 module HOAS (Primitive(..), Term(..), PrimTerm(..), let_) where
 

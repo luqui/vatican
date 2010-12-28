@@ -1,5 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 
+-- A simple typeclass for terms in HOAS.
+
 module HOAS (Primitive(..), Term(..), PrimTerm(..), let_) where
 
 class (Show a) => Primitive a where

@@ -1,5 +1,8 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
+-- A direct interpretation of HOAS in Haskell, for sanity checking the results
+-- of interpreter stacks.
+
 module Reference (Reference, eval) where
 
 import HOAS

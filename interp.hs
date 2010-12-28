@@ -1,5 +1,9 @@
 {-# LANGUAGE RankNTypes, FlexibleContexts #-}
 
+-- An implementation of interpreter stacking, to check whether we have achieved
+-- true lazy specialization.  This represents terms of λ-calculus in itself as
+-- Church-encoded deBruijn-encoded terms. 
+
 import HOAS
 import DeBruijn
 import qualified BUBS

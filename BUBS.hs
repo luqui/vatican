@@ -1,5 +1,9 @@
 {-# LANGUAGE PatternGuards, FlexibleInstances, MultiParamTypeClasses #-}
 
+-- An implementation of bottom-up beta substitution.  From the paper: 
+-- Bottom-Up β-Substitution: Uplinks and λ-DAGs
+-- By Olin Shivers & Mitchell Wand.  2004.
+
 module BUBS 
     ( Term, eval )
 where

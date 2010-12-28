@@ -1,4 +1,6 @@
-module DeBruijn where
+-- A compiler for terms in HOAS to deBruijn-encoded terms.
+
+module DeBruijn (Exp(..), DeBruijn, getDeBruijn) where
 
 import HOAS
 import Control.Monad.Trans.Class

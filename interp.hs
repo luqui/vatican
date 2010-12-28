@@ -1,7 +1,8 @@
 {-# LANGUAGE RankNTypes, FlexibleContexts #-}
 
-import qualified Vatican
 import HOAS
+import DeBruijn
+import qualified BUBS
 import System (getArgs)
 
 data Value
@@ -10,7 +11,7 @@ data Value
     | VInt Integer
     deriving Show
 
-instance Vatican.Primitive Value where
+instance Primitive Value where
     apply VPlus (VInt x) = VAdd x
     apply (VAdd x) (VInt y) = VInt (x+y)
     apply x y = error $ "Type error when applying (" ++ show x ++ ") to (" ++ show y ++ ")"
@@ -61,4 +62,4 @@ go n =
 
 main = do
     [nstr] <- getArgs
-    print =<< Vatican.eval (go (read nstr))
+    print =<< BUBS.eval (go (read nstr))

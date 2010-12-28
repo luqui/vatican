@@ -1,24 +1,20 @@
-{-# LANGUAGE RecursiveDo, PatternGuards #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, MultiParamTypeClasses #-}
 
-module Vatican 
-    ( Primitive(..)
-    , Term, eval
-    , (%), fun, prim, let_
-    )
+module BUBS 
+    ( Term, eval )
 where
 
+import qualified HOAS
 import Data.IORef
 import Control.Monad (forM_, (<=<), when)
 import Control.Applicative
-import Control.Monad.Trans
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Writer
 import System.Process (system)
 import Data.Maybe (fromJust, catMaybes)
 import Data.List (delete)
-
-class (Show a) => Primitive a where
-    apply :: a -> a -> a
 
 data UplinkType = UplinkAppL | UplinkAppR | UplinkLambda | UplinkVar
     deriving (Eq)
@@ -179,7 +175,7 @@ betaReduce appref = do
     mapM_ (upreplace result) =<< nodeUplinks <$> readIORef appref
     return result
 
-hnfReduce :: (Primitive a) => NodeRef a -> IO ()
+hnfReduce :: (HOAS.Primitive a) => NodeRef a -> IO ()
 hnfReduce noderef = do
     node <- readIORef noderef
     case nodeData node of
@@ -194,13 +190,13 @@ hnfReduce noderef = do
                     right' <- readIORef =<< getRight noderef
                     case nodeData right' of
                         PrimNode p' -> do
-                            result <- newNodeRef $ PrimNode (p `apply` p')
+                            result <- newNodeRef $ PrimNode (p `HOAS.apply` p')
                             mapM_ (upreplace result) =<< nodeUplinks <$> readIORef noderef
                         _ -> return ()
                 _ -> return ()
         _ -> return ()
 
-graphviz :: (Primitive a) => NodeRef a -> IO String
+graphviz :: (HOAS.Primitive a) => NodeRef a -> IO String
 graphviz noderef_ = do
     output <- evalStateT (execWriterT (go noderef_)) ([], 0)
     return $ "digraph Lambda {\n" ++ output ++ "}\n"
@@ -242,14 +238,14 @@ graphviz noderef_ = do
                     Nothing -> return ()
                 return ident
 
-runGraphviz :: (Primitive a) => NodeRef a -> IO ()
+runGraphviz :: (HOAS.Primitive a) => NodeRef a -> IO ()
 runGraphviz node = do
     writeFile "graph.dot" =<< graphviz node
     system "dot -T png -o graph.png graph.dot"
     system "eog graph.png"
     return ()
 
-eval :: (Primitive a) => Term a -> IO a
+eval :: (HOAS.Primitive a) => Term a -> IO a
 eval t = do
     noderef <- getTerm $ fun (\z -> t)
     hnfReduce noderef
@@ -284,7 +280,10 @@ prim x = Term $ do
     newref <- newNodeRef $ PrimNode x
     return newref
 
-let_ :: Term a -> (Term a -> Term a) -> Term a
-let_ (Term exp) bodyf = Term $ do
-    ref <- exp
-    getTerm . bodyf . Term $ return ref
+instance HOAS.Term (Term a) where
+    (%) = (%)
+    fun = fun
+
+instance HOAS.PrimTerm a (Term a) where
+    prim = prim
+

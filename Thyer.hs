@@ -1,7 +1,10 @@
-module Thyer where
+module Thyer (eval) where
 
+import qualified Depth
 import qualified HOAS
 import qualified IndirRef as Ref
+import Control.Applicative
+import Control.Monad ((<=<))
 
 type NodeRef a = Ref.Ref (Node a)
 
@@ -68,3 +71,20 @@ subst body bind arg shift = do
                     Ref.new (Node newdepth (Apply f' x'))
                 _ -> return body
     return copy
+
+fromDepth :: Depth.ExpNode a -> IO (NodeRef a)
+fromDepth (d, n) = case n of
+    Depth.Lambda body -> Ref.new . Node d . Lambda =<< fromDepth body
+    Depth.Apply f x   -> Ref.new =<< Node d <$> liftA2 Apply (fromDepth f) (fromDepth x)
+    Depth.Var         -> Ref.new (Node d Var)
+    Depth.Prim x      -> Ref.new . Node d . Prim $ x
+
+getValue :: (HOAS.Primitive a) => NodeRef a -> IO a
+getValue ref = do
+    refnode <- reduce ref
+    case nodeData refnode of
+        Prim x -> return x
+        _ -> fail "Not a value"
+
+eval :: (HOAS.Primitive a) => Depth.Depth a -> IO a
+eval = getValue <=< fromDepth . Depth.getDepth

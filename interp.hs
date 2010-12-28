@@ -8,6 +8,7 @@ import HOAS
 import DeBruijn
 import qualified BUBS
 import qualified Reference
+import qualified Thyer
 import System (getArgs)
 
 data Value
@@ -68,6 +69,7 @@ go n =
 main = do
     [interp, nstr] <- getArgs
     case interp of
-        "bubs" -> print =<< BUBS.eval (go (read nstr))
-        "ref"  -> print $ Reference.eval (go (read nstr))
-        x      -> fail $ "Unknown interpreter '" ++ x ++ "'.  Choices are 'bubs' and 'ref'."
+        "bubs"  -> print =<< BUBS.eval (go (read nstr))
+        "thyer" -> print =<< Thyer.eval (go (read nstr))
+        "ref"   -> print $ Reference.eval (go (read nstr))
+        x       -> fail $ "Unknown interpreter '" ++ x ++ "'.  Choices are 'bubs' and 'ref'."

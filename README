@@ -14,6 +14,6 @@ example, at the 3rd level, it is running an interpreter running an interpreter
 running an interpreter running 1+1+1+0.  
 
 The other options are "thyer" and "ref".  "ref" is a simple embedding of HOAS
-into Haskell, running (asymptotically) at the speed Haskell would run this code.
+into Haskell, running (asymptotically) at the speed GHC would run this code.
 
 Here you can see thyer kick the pants off the other two.

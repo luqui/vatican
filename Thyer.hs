@@ -1,3 +1,9 @@
+-- An implementation of a Thyer lazy specializer. From:
+-- Lazy Specialization
+-- by Michael Jonathan Thyer (1999).
+
+-- Memoizing substitutions not implemented.
+
 module Thyer (eval) where
 
 import qualified Depth

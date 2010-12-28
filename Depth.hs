@@ -1,5 +1,7 @@
 {-# LANGUAGE TupleSections, FlexibleInstances, MultiParamTypeClasses #-}
 
+-- Compiler from HOAS to Thyer's depth notation.
+
 module Depth 
     ( Exp(..), ExpNode, Depth, prim, getDepth )
 where

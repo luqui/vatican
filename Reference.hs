@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 
-module Reference where
+module Reference (Reference, eval) where
 
 import HOAS
 
@@ -17,6 +17,6 @@ instance (Primitive a) => Term (Reference a) where
 instance (Primitive a) => PrimTerm a (Reference a) where
     prim = RPrim
 
-runReference :: Reference a -> a
-runReference (RPrim a) = a
-runReference _ = error "Not a prim!"
+eval :: Reference a -> a
+eval (RPrim a) = a
+eval _ = error "Not a prim!"

@@ -3,6 +3,7 @@
 import HOAS
 import DeBruijn
 import qualified BUBS
+import qualified Reference
 import System (getArgs)
 
 data Value
@@ -61,5 +62,8 @@ go n =
     toPrim % (foldl (%) interp (replicate n (quote interp)) % quote program)
 
 main = do
-    [nstr] <- getArgs
-    print =<< BUBS.eval (go (read nstr))
+    [interp, nstr] <- getArgs
+    case interp of
+        "bubs" -> print =<< BUBS.eval (go (read nstr))
+        "ref"  -> print $ Reference.eval (go (read nstr))
+        x      -> fail $ "Unknown interpreter '" ++ x ++ "'.  Choices are 'bubs' and 'ref'."

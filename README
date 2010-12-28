@@ -8,10 +8,11 @@ To try it out, use measure.pl, like so:
 
     % perl measure.pl bubs 5
 
-This runs the incredibly simple program 1+1+1+0 using the bubs (bottom up beta
-substitution) interpreter at levels of interpretation from 0 to 5.  So, for
-example, at the 3rd level, it is running an interpreter running an interpreter
-running an interpreter running 1+1+1+0.  
+This runs the incredibly simple program 3*3 using the bubs (bottom up beta
+substitution) interpreter at levels of interpretation from 0 to 5 (it is very
+likely you will not be patient enough for this to finish).  So, for example, at
+the 3rd level, it is running an interpreter running an interpreter running an
+interpreter running 3*3.  
 
 The other options are "thyer" and "ref".  "ref" is a simple embedding of HOAS
 into Haskell, running (asymptotically) at the speed GHC would run this code.

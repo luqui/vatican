@@ -16,7 +16,7 @@ if (not -f "interp") {
 
 my ($interp, $limit, $output) = @ARGV;
 
-$output ||= 'VInt 3';
+$output ||= 'VInt 9';
 
 for my $i (0..$limit) {
     my ($stdout, $stderr) = capture_exec("/usr/bin/time -f %U ./interp $interp $i");

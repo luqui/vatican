@@ -59,7 +59,10 @@ program :: (Term t) => t
 program = 
     let_ (fun (\f -> fun (\x -> x))) $ \zero ->
     let_ (fun (\n -> fun (\f -> fun (\x -> f % (n % f % x))))) $ \succ ->
-    succ % (succ % (succ % zero))
+    let_ (fun (\n -> fun (\m -> n % succ % m))) $ \plus -> 
+    let_ (fun (\n -> fun (\m -> n % (plus % m) % zero))) $ \times ->
+    let_ (succ % (succ % (succ % zero))) $ \three -> 
+    times % three % three
 
 go :: Int -> (PrimTerm Value t) => t
 go n = 

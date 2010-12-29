@@ -4,6 +4,8 @@
 -- true lazy specialization.  This represents terms of λ-calculus in itself as
 -- Church-encoded deBruijn-encoded terms. 
 
+module Main where
+
 import HOAS
 import DeBruijn
 import qualified BUBS

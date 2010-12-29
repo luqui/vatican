@@ -10,16 +10,14 @@ Usage: measure.pl <interp> <limit>
 USAGE
 }
 
-if (not -f "interp") {
-    system "ghc --make -O interp";
-}
+system "ghc --make -O InterpreterStack";
 
 my ($interp, $limit, $output) = @ARGV;
 
 $output ||= 'VInt 9';
 
 for my $i (0..$limit) {
-    my ($stdout, $stderr) = capture_exec("/usr/bin/time -f %U ./interp $interp $i");
+    my ($stdout, $stderr) = capture_exec("/usr/bin/time -f %U ./InterpreterStack $interp $i");
     chomp $stdout;
     if ($stdout ne $output) {
         die "Interpreter failure at level $i: expecting '$output', got '$stdout'";

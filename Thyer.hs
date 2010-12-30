@@ -14,11 +14,17 @@ import qualified IORefRef as Ref
 import Control.Applicative
 import Control.Monad ((<=<))
 
+data Blocked
+    = Blocked
+    | Unblocked
+    deriving (Eq)
+
 type NodeRef a = Ref.Ref (Node a)
 
 data Node a = Node {
-    nodeDepth :: !Int,
-    nodeData  :: !(NodeData a)
+    nodeBlocked :: !Blocked,
+    nodeDepth   :: !Int,
+    nodeData    :: !(NodeData a)
   }
 
 data NodeData a
@@ -33,6 +39,7 @@ data NodeData a
 reduce :: (HOAS.Primitive a) => NodeRef a -> IO (Node a)
 reduce ref = do
     node <- Ref.read ref
+    if nodeBlocked node == Blocked then return node else do
     case nodeData node of
         Apply f arg -> do
             fnode <- reduce f
@@ -40,14 +47,14 @@ reduce ref = do
                 Lambda body -> do
                     let bind = nodeDepth fnode + 1
                         shift = nodeDepth node - bind   -- ???
-                        node' = Node (nodeDepth fnode) (Subst body bind arg shift)
+                        node' = Node Unblocked (nodeDepth fnode) (Subst body bind arg shift)
                     Ref.write ref node'
                     reduce ref
                 Prim p -> do
                     argnode <- reduce arg
                     case nodeData argnode of
                         Prim p'   -> do
-                            let red = Node 0 (Prim (p `HOAS.apply` p'))
+                            let red = Node Blocked 0 (Prim (p `HOAS.apply` p'))
                             Ref.write ref red
                             return red
                         Apply {}  -> blocked
@@ -62,7 +69,11 @@ reduce ref = do
             reduce ref  -- huh...
         _ -> blocked
     where
-    blocked = Ref.read ref
+    blocked = do
+        node <- Ref.read ref
+        let !node' = node { nodeBlocked = Blocked }
+        Ref.write ref node'
+        return node'
 
 -- subst returns body with the variable at depth bind substituted for arg.
 subst :: NodeRef a -> Int -> NodeRef a -> Int -> IO (NodeRef a)
@@ -72,22 +83,22 @@ subst body bind arg shift = do
     if nodeDepth bodynode < bind then return body else do
     case nodeData bodynode of
                 Var | nodeDepth bodynode == bind -> return arg
-                    | otherwise                  -> Ref.new (Node newdepth Var)
+                    | otherwise                  -> Ref.new (Node Blocked newdepth Var)
                 Lambda body -> do
-                    substbody <- Ref.new (Node (newdepth+1) (Subst body bind arg shift))
-                    Ref.new (Node newdepth (Lambda substbody))
+                    substbody <- Ref.new (Node Unblocked (newdepth+1) (Subst body bind arg shift))
+                    Ref.new (Node Unblocked newdepth (Lambda substbody))
                 Apply f x -> do
-                    f' <- Ref.new (Node newdepth (Subst f bind arg shift)) 
-                    x' <- Ref.new (Node newdepth (Subst x bind arg shift))
-                    Ref.new (Node newdepth (Apply f' x'))
+                    f' <- Ref.new (Node Unblocked newdepth (Subst f bind arg shift)) 
+                    x' <- Ref.new (Node Unblocked newdepth (Subst x bind arg shift))
+                    Ref.new (Node Unblocked newdepth (Apply f' x'))
                 _ -> return body
 
 fromDepth :: Depth.ExpNode a -> IO (NodeRef a)
 fromDepth (d, n) = case n of
-    Depth.Lambda body -> Ref.new . Node d . Lambda =<< fromDepth body
-    Depth.Apply f x   -> Ref.new =<< Node d <$> liftA2 Apply (fromDepth f) (fromDepth x)
-    Depth.Var         -> Ref.new (Node d Var)
-    Depth.Prim x      -> Ref.new . Node d . Prim $ x
+    Depth.Lambda body -> Ref.new . Node Unblocked d . Lambda =<< fromDepth body
+    Depth.Apply f x   -> Ref.new =<< Node Unblocked d <$> liftA2 Apply (fromDepth f) (fromDepth x)
+    Depth.Var         -> Ref.new (Node Blocked d Var)
+    Depth.Prim x      -> Ref.new . Node Blocked d . Prim $ x
 
 getValue :: (HOAS.Primitive a) => NodeRef a -> IO a
 getValue ref = do

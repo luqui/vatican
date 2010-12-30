@@ -11,6 +11,7 @@ import DeBruijn
 import qualified BUBS
 import qualified Reference
 import qualified Thyer
+import qualified Naive
 import System (getArgs)
 
 data Value
@@ -77,4 +78,5 @@ main = do
         "bubs"  -> print =<< BUBS.eval (go (read nstr))
         "thyer" -> print =<< Thyer.eval (go (read nstr))
         "ref"   -> print $ Reference.eval (go (read nstr))
+        "naive" -> print $ Naive.eval (go (read nstr))
         x       -> fail $ "Unknown interpreter '" ++ x ++ "'.  Choices are 'bubs' and 'ref'."

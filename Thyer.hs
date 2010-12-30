@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -funbox-strict-fields #-}
+
 -- An implementation of a Thyer lazy specializer. From:
 -- Lazy Specialization
 -- by Michael Jonathan Thyer (1999).
@@ -8,24 +10,26 @@ module Thyer (eval) where
 
 import qualified Depth
 import qualified HOAS
-import qualified IndirRef as Ref
+import qualified IORefRef as Ref
 import Control.Applicative
 import Control.Monad ((<=<))
 
 type NodeRef a = Ref.Ref (Node a)
 
 data Node a = Node {
-    nodeDepth :: Int,
-    nodeData  :: NodeData a
+    nodeDepth :: !Int,
+    nodeData  :: !(NodeData a)
   }
 
 data NodeData a
-    = Lambda (NodeRef a)
-    | Apply  (NodeRef a) (NodeRef a)
-    | Subst  (NodeRef a) Int (NodeRef a) Int   -- body var arg shift
+    = Lambda !(NodeRef a)
+    | Apply  !(NodeRef a) !(NodeRef a)
+    | Subst  !(NodeRef a) !Int !(NodeRef a) !Int   -- body var arg shift
     | Var
     | Prim   a
 
+-- reduce reduces its argument to whnf *destructively*.  It returns the reduced 
+-- node for convenience.  reduce x = reduce x >> Ref.read x.
 reduce :: (HOAS.Primitive a) => NodeRef a -> IO (Node a)
 reduce ref = do
     node <- Ref.read ref
@@ -60,12 +64,13 @@ reduce ref = do
     where
     blocked = Ref.read ref
 
+-- subst returns body with the variable at depth bind substituted for arg.
 subst :: NodeRef a -> Int -> NodeRef a -> Int -> IO (NodeRef a)
 subst body bind arg shift = do  
     bodynode <- Ref.read body
     let newdepth = nodeDepth bodynode + shift
     if nodeDepth bodynode < bind then return body else do
-    copy <- case nodeData bodynode of
+    case nodeData bodynode of
                 Var | nodeDepth bodynode == bind -> return arg
                     | otherwise                  -> Ref.new (Node newdepth Var)
                 Lambda body -> do
@@ -76,7 +81,6 @@ subst body bind arg shift = do
                     x' <- Ref.new (Node newdepth (Subst x bind arg shift))
                     Ref.new (Node newdepth (Apply f' x'))
                 _ -> return body
-    return copy
 
 fromDepth :: Depth.ExpNode a -> IO (NodeRef a)
 fromDepth (d, n) = case n of

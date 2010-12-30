@@ -72,9 +72,9 @@ go n =
     toPrim % (foldl (%) interp (replicate n (quote interp)) % quote program)
 
 main = do
-    [interp, nstr] <- getArgs
-    case interp of
-        "bubs"  -> print =<< BUBS.eval (go (read nstr))
-        "thyer" -> print =<< Thyer.eval (go (read nstr))
-        "ref"   -> print $ Reference.eval (go (read nstr))
-        x       -> fail $ "Unknown interpreter '" ++ x ++ "'.  Choices are 'bubs' and 'ref'."
+    args <- getArgs
+    case args of
+        ["bubs",n]  -> print =<< BUBS.eval (go (read n))
+        ["thyer",n] -> print =<< Thyer.eval (go (read n))
+        ["ref",n]   -> print $ Reference.eval (go (read n))
+        _           -> fail $ "Usage: InterpreterStack <interp> <levels>, <interp> is one of bubs, thyer, ref, <levels> is a natural"

@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes, FlexibleContexts #-}
+{-# LANGUAGE RankNTypes, FlexibleContexts, GADTs, PatternGuards #-}
 
 -- An implementation of interpreter stacking, to check whether we have achieved
 -- true lazy specialization.  This represents terms of λ-calculus in itself as
@@ -11,7 +11,10 @@ import DeBruijn
 import qualified BUBS
 import qualified Reference
 import qualified Thyer
+import qualified Naive
 import System (getArgs)
+import qualified Data.Char as Char
+import Data.List (intercalate)
 
 data Value
     = VPlus
@@ -71,10 +74,21 @@ go n =
     let_ (fun (\n -> n % prim (VAdd 1) % prim (VInt 0))) $ \toPrim ->
     toPrim % (foldl (%) interp (replicate n (quote interp)) % quote program)
 
+interpreters :: [ (String, Int -> IO Value) ]
+interpreters = [ "bubs"  --> BUBS.eval . go
+               , "thyer" --> Thyer.eval . go
+               , "ref"   --> return . Reference.eval . go
+               , "naive" --> \n -> return (Naive.eval (go n))
+               ]
+    where
+    infix 0 -->
+    (-->) = (,)
+
+main :: IO ()
 main = do
     args <- getArgs
     case args of
-        ["bubs",n]  -> print =<< BUBS.eval (go (read n))
-        ["thyer",n] -> print =<< Thyer.eval (go (read n))
-        ["ref",n]   -> print $ Reference.eval (go (read n))
-        _           -> fail $ "Usage: InterpreterStack <interp> <levels>, <interp> is one of bubs, thyer, ref, <levels> is a natural"
+        [i, n] | Just interp <- lookup i interpreters, all Char.isDigit n 
+            -> print =<< interp (read n)
+        _   -> fail $ "Usage: InterpreterStack <interp> <levels>, <interp> is one of " 
+                   ++ intercalate "," (map fst interpreters) ++ ", and <levels> is a natural"

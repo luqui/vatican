@@ -74,6 +74,17 @@ go n =
     let_ (fun (\n -> n % prim (VAdd 1) % prim (VInt 0))) $ \toPrim ->
     toPrim % (foldl (%) interp (replicate n (quote interp)) % quote program)
 
+
+-- This one loops in naive, returns 0 in all others
+{-
+go n = fix % fun (\f -> fun (\b -> fun (\x -> fun (\y -> b % x % (fun (\x -> f % false % x) % y % y))))) % true % true % prim (VInt 0)
+    where
+    fix = fun (\f -> fun (\x -> x % x) % fun (\x -> f % (x % x)))
+    false = fun (\a -> fun (\b -> a))
+    true = fun (\a -> fun (\b -> b))
+-}
+
+    
 interpreters :: [ (String, Int -> IO Value) ]
 interpreters = [ "bubs"  --> BUBS.eval . go
                , "thyer" --> Thyer.eval . go

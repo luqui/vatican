@@ -9,12 +9,12 @@
 module Naive where
 
 import Control.Monad
-import Control.Monad.ST
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 import Data.IntSet (IntSet)
+import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.IntSet as I
-import Data.STRef
+import qualified Data.Supply as Supply
 
 import HOAS
 
@@ -24,25 +24,29 @@ data Exp a = Var Int
            | Prim a
            deriving Show
 
-type Env s = ReaderT (STRef s Int) (ST s)
+newtype Env a = Env { runEnv :: Supply.Supply Int -> a }
 
-newtype Naive s a = Naive { unNaive :: Env s (Exp a) }
+instance Functor Env where
+    fmap f (Env s) = Env (f . s)
 
-fresh :: Env s Int
-fresh = do
-  ref <- ask
-  lift . unsafeInterleaveST $ do
-    x <- readSTRef ref
-    writeSTRef ref $ succ x
-    return x
+instance Monad Env where
+    return = Env . const
+    Env s >>= f = Env $ \sup ->
+        let (sup1, sup2) = Supply.split2 sup in
+        runEnv (f (s sup1)) sup2
 
-instance Term (Naive s a) where
+newtype Naive a = Naive { unNaive :: Env (Exp a) }
+
+fresh :: Env Int
+fresh = Env Supply.supplyValue
+
+instance Term (Naive a) where
   Naive left % Naive right = Naive $ liftM2 App left right
   fun f = Naive $ do
     x <- fresh
     Lam x `liftM` (unNaive . f . Naive . return $ Var x)
 
-instance PrimTerm a (Naive s a) where
+instance PrimTerm a (Naive a) where
   prim = Naive . return . Prim
 
 freeVars :: Exp a -> IntSet
@@ -51,7 +55,7 @@ freeVars (Lam v e) = I.delete v $ freeVars e
 freeVars (App f a) = freeVars f `I.union` freeVars a
 freeVars _ = I.empty
 
-subst :: Int -> Exp a -> Exp a -> Env s (Exp a)
+subst :: Int -> Exp a -> Exp a -> Env (Exp a)
 subst x s b = sub b
   where sub e@(Var v) | v == x = return s
                       | otherwise = return e
@@ -65,7 +69,7 @@ subst x s b = sub b
         sub e = return e
         fvs = freeVars s
 
-reduce :: Primitive a => Exp a -> Env s (Exp a)
+reduce :: Primitive a => Exp a -> Env (Exp a)
 reduce (Lam x e) = Lam x `liftM` reduce e
 reduce (App e1 e2) = do
   e1' <- reduce e1
@@ -78,10 +82,11 @@ reduce (App e1 e2) = do
     _ -> return $ App e1' e2'
 reduce e = return e
 
-eval :: Primitive a => (forall s. Naive s a) -> a
+eval :: Primitive a => Naive a -> a
 eval m = case e of
   Prim a -> a
   _ -> error "Not a prim!"
-  where e = runST $ do
-          ref <- newSTRef 0
-          runReaderT (reduce =<< unNaive m) ref
+  where 
+  e = unsafePerformIO $ do
+        supply <- Supply.newSupply 0 succ
+        return $ runEnv (reduce =<< unNaive m) supply

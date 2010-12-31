@@ -12,7 +12,7 @@ import qualified BUBS
 import qualified Reference
 import qualified Thyer
 import qualified Naive
-import System (getArgs)
+import System.Environment (getArgs)
 import qualified Data.Char as Char
 import Data.List (intercalate)
 

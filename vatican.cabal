@@ -1,0 +1,10 @@
+Name:                vatican
+Version:             0.1
+Category:            Language
+Build-type:          Simple
+Cabal-version:       >=1.2
+
+Executable vatican
+  Build-depends: base, containers, process, transformers, value-supply
+  Main-is: InterpreterStack.hs
+  GHC-options: -O2

@@ -1,0 +1,38 @@
+\primzero primsucc ->
+
+(\let -> 
+  -- error
+  let ((\x -> x x) (\x -> x x)) \error ->
+ 
+  -- church numerals
+  let (\f x -> x) \zero ->
+  let (\n f x -> f (n f x)) \succ ->
+
+  -- scott lists
+  let (\n c -> n) \nil ->
+  let (\x xs -> \n c -> c x xs) \cons ->
+
+  let (\l -> l error (\x xs -> x)) \head ->
+  let (\l -> l error (\x xs -> xs)) \tail ->
+  
+  let (\xs n -> head (n tail xs)) \index ->
+
+  -- scott debruijn
+  let (\f   -> \l a v -> l f)   \fun ->
+  let (\t u -> \l a v -> a t u) \app ->
+  let (\n   -> \l a v -> v n)   \var ->
+  
+  -- recursion
+  let (\f -> (\x -> x x) (\x -> f (x x))) \fix ->
+
+  -- interpreter
+  let (fix (\interp env term -> term (\body    -> \x -> interp (cons x env) body)
+                                     (\fun arg -> interp env fun (interp env arg))
+                                     (\var     -> index env var)) nil)
+    \interpreter ->
+    
+  interpreter (fun (fun (var (succ zero)))) primzero error
+
+) (\def body -> body def)
+
+-- vim: ft=haskell :

@@ -1,6 +1,6 @@
 -- A compiler for terms in HOAS to deBruijn-encoded terms.
 
-module DeBruijn (Exp(..), DeBruijn, getDeBruijn) where
+module DeBruijn (Exp(..), DeBruijn, getDeBruijn, toHOAS) where
 
 import HOAS
 import Control.Monad.Trans.Class
@@ -12,7 +12,7 @@ import Control.Applicative
 data Exp a
     = ELam (Exp a)
     | EApp (Exp a) (Exp a)
-    | EVar Integer
+    | EVar Int
     | EPrim a
 
 showExp lp ap (ELam e) = parens lp $ "\\. " ++ showExp False False e
@@ -26,7 +26,7 @@ parens True x = "(" ++ x ++ ")"
 instance (Show a) => Show (Exp a) where
     show = showExp False False
 
-newtype DeBruijn a = DeBruijn { rundB :: ReaderT (Map.Map Integer Integer) (State Integer) (Exp a) }
+newtype DeBruijn a = DeBruijn { rundB :: ReaderT (Map.Map Int Int) (State Int) (Exp a) }
 
 instance Term (DeBruijn a) where
     DeBruijn t % DeBruijn u = DeBruijn $ liftA2 EApp t u
@@ -39,3 +39,11 @@ instance Term (DeBruijn a) where
 
 getDeBruijn :: DeBruijn a -> Exp a
 getDeBruijn dB = evalState (runReaderT (rundB dB) Map.empty) 0
+
+toHOAS :: (Term t, PrimTerm a t) => Exp a -> t
+toHOAS = go []
+    where
+    go env (ELam body) = fun (\x -> go (x:env) body)
+    go env (EApp t u)  = go env t % go env u
+    go env (EVar z)    = env !! z
+    go env (EPrim p)   = prim p

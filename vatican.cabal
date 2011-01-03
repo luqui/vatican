@@ -5,6 +5,6 @@ Build-type:          Simple
 Cabal-version:       >=1.2
 
 Executable vatican
-  Build-depends: base >= 4, containers, process, transformers, value-supply
-  Main-is: InterpreterStack.hs
+  Build-depends: base >= 4, containers, process, transformers, value-supply, parsec==3.*
+  Main-is: Main.hs
   GHC-options: -O

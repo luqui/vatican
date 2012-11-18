@@ -20,6 +20,8 @@ type Parser = P.Parsec String ()
 preds = P.satisfy . (result or . sequenceA)
     where result = (.)
 
+opchar = P.oneOf "`~!@#$%^&*=+|;:,<.>/?"
+
 lex = P.makeTokenParser P.LanguageDef {
     P.commentStart    = "{-",
     P.commentEnd      = "-}",
@@ -27,12 +29,21 @@ lex = P.makeTokenParser P.LanguageDef {
     P.nestedComments  = True,
     P.identStart      = preds [ Char.isAlpha, (`elem` "_") ],
     P.identLetter     = preds [ Char.isAlphaNum, (`elem` "_-'") ],
-    P.opStart         = fail "no operators",
-    P.opLetter        = fail "no operators",
+    P.opStart         = opchar,
+    P.opLetter        = opchar,
     P.reservedNames   = [],
     P.reservedOpNames = [ "\\", "->" ],
     P.caseSensitive   = True
 }
+
+opExp :: Parser Exp
+opExp = go <$> exp <*> P.many (liftA2 (,) (P.operator lex) exp)
+    where
+    go x0 [] = x0
+    go x0 ((op, x1):xs) = go (App (App (Var op) x0) x1) xs
+
+ident :: Parser String
+ident = P.identifier lex <|> P.parens lex (P.operator lex)
 
 exp :: Parser Exp
 exp = foldl1 App <$> P.many1 term
@@ -40,9 +51,9 @@ exp = foldl1 App <$> P.many1 term
     term = var <|> lambda <|> parenExp
     var = Var <$> P.identifier lex
     lambda = flip (foldr Lambda)
-           <$> (P.reservedOp lex "\\" *> P.many1 (P.identifier lex)) 
-           <*> (P.reservedOp lex "->" *> exp)
-    parenExp = P.parens lex exp
+           <$> (P.reservedOp lex "\\" *> P.many1 ident) 
+           <*> (P.reservedOp lex "->" *> opExp)
+    parenExp = P.parens lex opExp
 
 toDeBruijn :: Exp -> DB.Exp a
 toDeBruijn = flip runReader Map.empty . go
@@ -52,4 +63,4 @@ toDeBruijn = flip runReader Map.empty . go
     go (Var v) = DB.EVar <$> asks (Map.! v)
 
 parse :: String -> Either P.ParseError (DB.Exp a)
-parse = fmap toDeBruijn . P.parse exp "<input>"
+parse = fmap toDeBruijn . P.parse opExp "<input>"

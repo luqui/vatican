@@ -1,6 +1,10 @@
 \primzero primsucc ->
 
-(\let -> 
+(\interp ->
+
+interp (\f -> f) (\f x -> f x) (\x -> x)
+
+) (quote ((\let -> 
   -- error
   let ((\x -> x x) (\x -> x x)) \error ->
  
@@ -33,6 +37,6 @@
     
   interpreter (fun (fun (var (succ zero)))) primzero error
 
-) (\def body -> body def)
+) (\def body -> body def)))
 
 -- vim: ft=haskell :

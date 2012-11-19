@@ -10,11 +10,13 @@ import qualified Data.Set as Set
 import Control.Applicative
 import Control.Monad.Trans.Reader
 import Data.Traversable (sequenceA)
+import Debug.Trace
 
 data Exp 
     = Lambda String Exp
     | App Exp Exp
     | Var String
+    deriving (Show)
 
 type Parser = P.Parsec String ()
 
@@ -58,7 +60,7 @@ exp = foldl1 App <$> P.many1 term
     parenExp = P.parens lex opExp
 
 usedVars :: Exp -> Set.Set String
-usedVars (Lambda s e) = Set.delete s (usedVars e)
+usedVars (Lambda s e) = Set.insert s (Set.delete s (usedVars e))
 usedVars (App f x) = usedVars f `Set.union` usedVars x
 usedVars (Var x) = Set.singleton x
 
@@ -66,7 +68,7 @@ makeFresh :: Set.Set String -> String -> String
 makeFresh set x0 = head [ x0 ++ n | n <- "":map show [0..], not (x0 `Set.member` set) ] 
 
 quote :: Exp -> Exp
-quote e = Lambda lam $ Lambda app $ go Set.empty e
+quote e = Lambda lam $ Lambda app $ Lambda inj $ go Set.empty e
     where
     used = usedVars e
     lam = makeFresh used "lam"
@@ -89,5 +91,7 @@ toDeBruijn = flip runReader Map.empty . go
     get v = asks (maybe (error ("Unbound variable: " ++ v)) id . Map.lookup v)
         
 
+traced x = trace (show x) x
+
 parse :: String -> Either P.ParseError (DB.Exp a)
-parse = fmap toDeBruijn . P.parse opExp "<input>"
+parse = fmap toDeBruijn . traced . P.parse opExp "<input>"

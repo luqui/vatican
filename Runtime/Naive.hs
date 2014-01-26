@@ -6,7 +6,7 @@
 -- but, perhaps surprisingly, it passes the tower of interpreters
 -- test.
 
-module Naive where
+module Runtime.Naive where
 
 import Control.Monad
 import Control.Monad.Trans.Class

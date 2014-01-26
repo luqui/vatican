@@ -6,7 +6,7 @@
 
 -- Memoizing substitutions not implemented.
 
-module Thyer (eval) where
+module Runtime.Thyer (eval) where
 
 import qualified Depth
 import qualified HOAS

@@ -4,7 +4,7 @@
 -- Bottom-Up β-Substitution: Uplinks and λ-DAGs
 -- By Olin Shivers & Mitchell Wand.  2004.
 
-module BUBS 
+module Runtime.BUBS 
     ( Term, eval )
 where
 

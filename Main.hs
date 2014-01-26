@@ -4,10 +4,10 @@ module Main where
 
 import HOAS
 import DeBruijn
-import qualified BUBS
-import qualified Reference
-import qualified Thyer
-import qualified Naive
+import qualified Runtime.BUBS as BUBS
+import qualified Runtime.Reference as Reference
+import qualified Runtime.Thyer as Thyer
+import qualified Runtime.Naive as Naive
 import System.Environment (getArgs)
 import qualified Data.Char as Char
 import qualified Parser

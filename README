@@ -17,6 +17,9 @@ the 3rd level, it is running an interpreter running an interpreter running an
 interpreter running 3*3.  
 
 The other options are "thyer" and "ref".  "ref" is a simple embedding of HOAS
-into Haskell, running (asymptotically) at the speed GHC would run this code.
+into Haskell, running (asymptotically) at the speed GHC would run this code. 
+This also fails the test, getting exponentially slower with each level; waiting
+for level 5 requires deep patience.
 
-Here you can see thyer kick the pants off the other two.
+Here you can see thyer kick the pants off the other two.  It executes a
+stack of interpreters 100 in just over half a second. (!)

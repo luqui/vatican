@@ -1,7 +1,5 @@
 #!/usr/bin/perl
 
-use IO::CaptureOutput qw(capture_exec);
-
 if (@ARGV < 2) {
     die <<USAGE;
 Usage: measure.pl <interp> <limit>

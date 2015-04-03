@@ -22,4 +22,4 @@ This also fails the test, getting exponentially slower with each level; waiting
 for level 5 requires deep patience.
 
 Here you can see thyer kick the pants off the other two.  It executes a
-stack of interpreters 100 in just over half a second. (!)
+stack of interpreters 100 high in just over half a second. (!)

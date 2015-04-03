@@ -1,3 +1,5 @@
+See the branch `stack-demo` for the last time the code worked this way.
+
 This is a codebase for experimenting with lazy specializing interpretation
 strategies.  Currently implemented are:
 

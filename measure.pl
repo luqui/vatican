@@ -17,10 +17,5 @@ my ($interp, $limit, $output) = @ARGV;
 $output ||= 'VInt 9';
 
 for my $i (0..$limit) {
-    my ($stdout, $stderr) = capture_exec("/usr/bin/time -f %U ./InterpreterStack $interp $i");
-    chomp $stdout;
-    if ($stdout ne $output) {
-        die "Interpreter failure at level $i: expecting '$output', got '$stdout'";
-    }
-    print $stderr;
+    system "/usr/bin/time ./InterpreterStack $interp $i" and die;
 }

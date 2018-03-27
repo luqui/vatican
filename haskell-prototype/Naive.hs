@@ -29,6 +29,10 @@ newtype Env a = Env { runEnv :: Supply.Supply Int -> a }
 instance Functor Env where
     fmap f (Env s) = Env (f . s)
 
+instance Applicative Env where
+    pure = return
+    (<*>) = ap
+
 instance Monad Env where
     return = Env . const
     Env s >>= f = Env $ \sup ->

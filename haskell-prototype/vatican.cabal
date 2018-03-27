@@ -8,3 +8,5 @@ Executable vatican
   Build-depends: base >= 4, containers, process, transformers, value-supply
   Main-is: InterpreterStack.hs
   GHC-options: -O
+  Other-modules: BUBS, DeBruijn, Depth, HOAS, IORefRef, Naive, Reference, Thyer
+

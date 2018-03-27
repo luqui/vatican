@@ -13,6 +13,7 @@ enum NodeType
     , NODETYPE_SUBST
     , NODETYPE_VAR
     , NODETYPE_INDIR
+    , NODETYPE_PRIM
     };
 
 struct LambdaData {
@@ -37,6 +38,8 @@ struct IndrData {
     Node* target;
 };
 
+struct PrimData { };
+
 struct Node {
     NodeType type;
     bool blocked;
@@ -48,6 +51,7 @@ struct Node {
         SubstData subst;
         VarData var;
         IndrData indir;
+        PrimData prim;
     };
 };
 

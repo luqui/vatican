@@ -58,7 +58,7 @@ void fixup_debruijn(Node* node, int depth = 0) {
             node->depth = std::max(node->apply.f->depth, node->apply.x->depth);
         }
         break; case NODETYPE_VAR: {
-            node->depth = depth - node->depth;
+            node->depth = depth - node->depth;  // Convert from deBruijn;
         }
         break; default: {
         }
@@ -95,7 +95,8 @@ void show_node(Node* node, bool lambda_parens = false, bool apply_parens = false
 
 
 int main() {
-    Node* idf = lambda(var(0));
-    show_node(idf);
+    Node* ignoremiddle = lambda(lambda(lambda(apply(var(2), var(0)))));
+    fixup_debruijn(ignoremiddle);
+    show_node(ignoremiddle);
     std::cout << "\n";
 }

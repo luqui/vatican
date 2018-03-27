@@ -1,4 +1,5 @@
-HFILES = Vatican.h
+HFILES = Vatican.h Makefile
+CXXFLAGS = -g
 
 main: main.cpp $(HFILES)
-	$(CXX) -o $@ $<
+	$(CXX) $(CXXFLAGS) -o $@ $<

@@ -38,11 +38,10 @@ Node* prim() {
     return ret;
 };
 
-
-void fixup_debruijn(Node* node, int depth = 0) {
+void fixup_debruijn_rec(Node* node, int depth) {
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
-            fixup_debruijn(node->lambda.body, depth+1);
+            fixup_debruijn_rec(node->lambda.body, depth+1);
             if (node->lambda.body->depth == depth+1) {
                 node->depth = depth;
             }
@@ -53,8 +52,8 @@ void fixup_debruijn(Node* node, int depth = 0) {
             }
         }
         break; case NODETYPE_APPLY: {
-            fixup_debruijn(node->apply.f, depth);
-            fixup_debruijn(node->apply.x, depth);
+            fixup_debruijn_rec(node->apply.f, depth);
+            fixup_debruijn_rec(node->apply.x, depth);
             node->depth = std::max(node->apply.f->depth, node->apply.x->depth);
         }
         break; case NODETYPE_VAR: {
@@ -65,6 +64,11 @@ void fixup_debruijn(Node* node, int depth = 0) {
     }
 };
 
+
+Node* fixup_debruijn(Node* node) {
+    fixup_debruijn_rec(node, 0);
+    return node;
+};
 
 void show_node(Node* node, bool lambda_parens = false, bool apply_parens = false) {
     switch (node->type) {
@@ -87,16 +91,35 @@ void show_node(Node* node, bool lambda_parens = false, bool apply_parens = false
         break; case NODETYPE_PRIM: {
             std::cout << "PRIM";
         }
+        break; case NODETYPE_SUBST: {
+            std::cout << "(";
+            show_node(node->subst.body, true, true);
+            std::cout << " @[ " << node->subst.var << " | " << node->subst.shift << " ] ";
+            show_node(node->subst.arg, true, true);
+            std::cout << ")";
+        }
+        break; case NODETYPE_INDIR: {
+            std::cout << "!";
+            show_node(node->indir.target, false, true);
+        }
         break; default: {
             std::cout << "UNSUPPORTED";
         }
     }
 }
 
+void test_idf() {
+    Node* idf = lambda(var(0));
+    Node* arg = prim();
+    Node* test = fixup_debruijn(apply(idf, arg));
+
+    show_node(test);    
+    std::cout << "\n";
+    (new Interp())->reduce_whnf(test);
+    show_node(test);
+    std::cout << "\n";
+};
 
 int main() {
-    Node* ignoremiddle = lambda(lambda(lambda(apply(var(2), var(0)))));
-    fixup_debruijn(ignoremiddle);
-    show_node(ignoremiddle);
-    std::cout << "\n";
+    test_idf();
 }

@@ -77,18 +77,26 @@ class Interp {
                 depth_t bind_depth = f->depth + 1;
                 depth_t shift = node->depth - bind_depth;
 
+                // Very sensitive!  Don't inline, we are mutating node's type!
+                Node* subst_body = f->lambda.body;
+                Node* subst_arg = node->apply.x;
+
                 node->blocked = false;
                 node->type = NODETYPE_SUBST;
-                node->subst.body   = f->lambda.body;
+                node->subst.body   = subst_body;
                 node->subst.var    = bind_depth;
-                node->subst.arg    = node->apply.x;
+                node->subst.arg    = subst_arg;
                 node->subst.shift  = shift;
                 goto REDO;
             }
             break; case NODETYPE_SUBST: {
                 reduce_whnf(node->subst.body);
                 Node* substed = subst(node->subst.body, node->subst.var, node->subst.arg, node->subst.shift);
-                
+                node->type = NODETYPE_INDIR;
+                node->indir.target = substed;
+                // XXX update depth and blocked?
+                //   (Really I think indir needs to precede these properties)
+                goto REDO;
             }
             break; case NODETYPE_INDIR: {
                 reduce_whnf(node->indir.target);

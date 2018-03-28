@@ -78,7 +78,7 @@ Node* fixup_debruijn(Node* node) {
     return node;
 };
 
-void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<Node*>& seen) {
+void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
     if (seen.find(node) != seen.end()) {
         std::cout << "LOOP";
         return;
@@ -88,7 +88,7 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
             if (lambda_parens) { std::cout << "("; }
-            std::cout << "\\[" << node->depth << "]. ";
+            std::cout << "\\[" << node->depth+1 << "]. ";
             show_node_rec(node->lambda.body, false, false, seen);
             if (lambda_parens) { std::cout << ")"; }
         }
@@ -129,6 +129,7 @@ void show_node(Node* node) {
 }
 
 void test_idf() {
+    std::cout << "test_idf\n";
     Node* idf = lambda(var(0));
     Node* arg = prim();
     Node* test = fixup_debruijn(apply(idf, arg));
@@ -145,6 +146,7 @@ void test_idf() {
 }
 
 void test_loop() {
+    std::cout << "test_loop\n";
     Node* w = lambda(apply(var(0), var(0)));
     Node* loop = apply(w,w);
 
@@ -167,6 +169,7 @@ void test_loop() {
 }
 
 void test_fix_idf() {
+    std::cout << "test_fix_idf\n";
     Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
     fix->lambda.body->apply.x = fix->lambda.body;
     Node* idf = fixup_debruijn(lambda(var(0)));
@@ -188,6 +191,7 @@ void test_fix_idf() {
 }
 
 void test_fix_const() {
+    std::cout << "test_fix_const\n";
     Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
     fix->lambda.body->apply.x = fix->lambda.body;
 
@@ -204,9 +208,46 @@ void test_fix_const() {
     }
 }
 
+void test_scott_tuple() {
+    std::cout << "test_scott_tuple\n";
+    // λx y c. c x y
+    Node* tuple = fixup_debruijn(lambda(lambda(lambda(apply(apply(var(0), var(2)), var(1))))));
+    // λt. t (λx y. x)
+    Node* fst = fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(1))))));
+    // λt. t (λx y. y)
+    Node* snd = fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(0))))));
+
+    Node* primx = prim();
+    Node* primy = prim();
+
+    Interp* interp = new Interp;
+
+    Node* tup = apply(apply(tuple, primx), primy);
+
+    Node* resultx = interp->reduce_whnf(apply(fst, tup));
+    if (resultx == primx) {
+        std::cout << "PASS\n";
+    }
+    else {
+        std::cout << "FAIL\n";
+        show_node(resultx);
+    }
+
+    Node* resulty = interp->reduce_whnf(apply(snd, tup));
+    if (resulty == primy) {
+        std::cout << "PASS\n";
+    }
+    else {
+        std::cout << "FAIL\n";
+        show_node(resulty);
+    }
+}
+
 int main() {
     test_idf();
     test_loop();
     test_fix_idf();
     test_fix_const();
+    test_scott_tuple();
+    //test_infinite_scott_stream();
 }

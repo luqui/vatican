@@ -16,23 +16,52 @@ enum NodeType
     };
 
 struct Node {
+    Node(NodeType type, bool blocked, depth_t depth) 
+        : type(type), blocked(blocked), depth(depth)
+    { }
+
     NodeType type;
     bool blocked;
     depth_t depth;
 };
 
 struct LambdaNode : Node {
+    LambdaNode(depth_t depth, Node* body) 
+        : Node(NODETYPE_LAMBDA, true, depth)
+        , body(body)
+    { }
+
     Node* body;
 };
 
-struct SubstNode : Node {
+// This is separated out so that we can pad ApplyNode appropriately.
+struct SubstData {
     Node* body;
     depth_t var;
     Node* arg;
     depth_t shift;
 };
 
+struct SubstNode : Node {
+    SubstNode(depth_t depth, Node* body, depth_t var, Node* arg, depth_t shift)
+        : Node(NODETYPE_SUBST, false, depth)
+    {
+        data.body = body;
+        data.var = var;
+        data.arg = arg;
+        data.shift = shift;
+    }
+        
+    SubstData data;
+};
+
 struct ApplyNode : Node {
+    ApplyNode(depth_t depth, Node* f, Node* x)
+        : Node(NODETYPE_APPLY, false, depth)
+        , f(f)
+        , x(x)
+    { }
+
     union {
         struct {
             Node* f;
@@ -40,19 +69,31 @@ struct ApplyNode : Node {
         };
 
         // This is to make sure we have enough space for the transmogrification
-        SubstNode _subst; 
+        SubstData _padding;
     };
 };
 
-struct VarNode : Node 
-{ };
+struct VarNode : Node {
+    VarNode(depth_t depth)
+        : Node(NODETYPE_VAR, true, depth)
+    { }
+};
 
 struct IndirNode : Node {
+    IndirNode(Node* target)
+        : Node(NODETYPE_INDIR, false, target->depth)
+        , target(target)
+    { }
+
     Node* target;
 };
 
 struct PrimNode : Node 
-{ };
+{
+    PrimNode()
+        : Node(NODETYPE_PRIM, true, 0)
+    { }
+};
 
 
 class Pool {
@@ -98,14 +139,14 @@ class Interp {
     Node* substitute(Node* body, depth_t var, Node* arg, depth_t shift);
 
     template<class T> 
-    T* allocate_node() {
+    void* allocate_node() {
         void* mem = _heap->allocate(sizeof(T));
         if (mem == 0) {
             // Obv do GC now
             throw std::runtime_error("Out of memory in this heap");
         }
         else {
-            return new (mem) T;
+            return mem;
         }
     }
 

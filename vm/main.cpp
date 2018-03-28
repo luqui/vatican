@@ -6,43 +6,23 @@
 // To build nodes for testing, we pun and use var depth as a de bruijn
 // index, then postprocess it into the correct depth form.
 Node* lambda(Node* body) {
-    LambdaNode* ret = new LambdaNode;
-    ret->type = NODETYPE_LAMBDA;
-    ret->blocked = true;
-    ret->depth = 0;
-    ret->body = body;
-    return ret;
+    return new LambdaNode(0, body);
 }
 
 Node* apply(Node* f, Node* x) {
-    ApplyNode* ret = new ApplyNode;
-    ret->type = NODETYPE_APPLY;
-    ret->blocked = false;
-    ret->depth = 0;
-    ret->f = f;
-    ret->x = x;
-    return ret;
-};
+    return new ApplyNode(0, f, x);
+}
 
 Node* var(int dbi) {
-    VarNode* ret = new VarNode;
-    ret->type = NODETYPE_VAR;
-    ret->blocked = true;
-
     // We use negative to indicate a debruijn index, because if the graph has
     // sharing it is possible to traverse nodes twice.  A variable's depth is
     // always positive so there is no overlap at 0.
-    ret->depth = -dbi;
-    return ret;
-};
+    return new VarNode(-dbi);
+}
 
 Node* prim() {
-    PrimNode* ret = new PrimNode;
-    ret->type = NODETYPE_PRIM;
-    ret->blocked = true;
-    ret->depth = 0;
-    return ret;
-};
+    return new PrimNode();
+}
 
 void fixup_debruijn_rec(Node* node, int depth) {
     switch (node->type) {
@@ -112,9 +92,9 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
         break; case NODETYPE_SUBST: {
             SubstNode* subst = (SubstNode*)node;
             std::cout << "(";
-            show_node_rec(subst->body, true, true, seen);
-            std::cout << " @[ " << subst->var << " | " << subst->shift << " ] ";
-            show_node_rec(subst->arg, true, true, seen);
+            show_node_rec(subst->data.body, true, true, seen);
+            std::cout << " @[ " << subst->data.var << " | " << subst->data.shift << " ] ";
+            show_node_rec(subst->data.arg, true, true, seen);
             std::cout << ")";
         }
         break; case NODETYPE_INDIR: {

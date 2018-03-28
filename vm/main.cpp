@@ -153,7 +153,7 @@ void test_loop() {
     Node* test = fixup_debruijn(loop);
     show_node(test);
     try {
-        test = (new Interp(1000))->reduce_whnf(test);
+        test = (new Interp(DEFAULT_HEAP_SIZE, 1000))->reduce_whnf(test);
         // Shouldn't ever get here
         std::cout << "FAIL\n";
         show_node(test);
@@ -176,7 +176,7 @@ void test_fix_idf() {
     Node* test = apply(fix, idf);
     show_node(test);
     try {
-        test = (new Interp(1000))->reduce_whnf(test);
+        test = (new Interp(DEFAULT_HEAP_SIZE, 1000))->reduce_whnf(test);
         std::cout << "FAIL\n";
         show_node(test);
     }
@@ -243,8 +243,8 @@ void test_scott_tuple() {
     }
 }
 
-void test_scott_stream() {
-    std::cout << "test_scott_stream\n";
+void test_scott_stream(size_t heap_size) {
+    std::cout << "test_scott_stream(" << heap_size << ")\n";
     
     Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
     fix->lambda.body->apply.x = fix->lambda.body;
@@ -259,17 +259,24 @@ void test_scott_stream() {
     Node* arg = prim();
     Node* stream = apply(fix, apply(tuple, arg));
 
-    Interp* interp = new Interp;
+    Interp* interp = new Interp(heap_size, 0);
 
-    for (int i = 0; i < 100; i++) {
-        Node* item = interp->reduce_whnf(apply(fst, stream));
-        if (item != arg) {
-            std::cout << "FAIL\n";
-            std::cout << "i = " << i << "\n";
-            show_node(item);
-            return;
+    try {
+        for (int i = 0; i < 100; i++) {
+            Node* item = interp->reduce_whnf(apply(fst, stream));
+            if (item != arg) {
+                std::cout << "FAIL\n";
+                std::cout << "i = " << i << "\n";
+                show_node(item);
+                return;
+            }
+            stream = apply(snd, stream);
         }
-        stream = apply(snd, stream);
+    }
+    catch (std::runtime_error& e) {
+        std::cout << "FAIL\n";
+        std::cout << e.what() << "\n";
+        return;
     }
 
     std::cout << "PASS\n";
@@ -281,5 +288,6 @@ int main() {
     test_fix_idf();
     test_fix_const();
     test_scott_tuple();
-    test_scott_stream();
+    test_scott_stream(DEFAULT_HEAP_SIZE);
+    test_scott_stream(1024);
 }

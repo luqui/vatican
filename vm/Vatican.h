@@ -1,10 +1,9 @@
 #ifndef __VATICAN_H__
 #define __VATICAN_H__
 
-#include <cassert>
-#include <stdexcept>
 
 typedef int depth_t;
+typedef unsigned char byte;
 
 struct Node;
 enum NodeType 
@@ -56,20 +55,52 @@ struct Node {
 };
 
 
+class Pool {
+  public:
+    Pool(size_t heapsize);
+    virtual ~Pool();
+
+    // Returns 0 if allocation was impossible
+    void* allocate(size_t size);
+
+    // Empties the pool for reuse.
+    void clear();
+  private:
+    byte* _pool_start;
+    byte* _cur;
+    byte* _pool_end;
+};
+
+
+const size_t DEFAULT_HEAP_SIZE = 0x100000;  // 1MB
+
 class Interp {
   public:
-    Interp() : _fuel(0) { }
+    Interp() { 
+        init(DEFAULT_HEAP_SIZE, 0); 
+    }
 
-    Interp(int fuel) : _fuel(fuel) { }
+    Interp(size_t heap_size, int fuel) {
+        init(heap_size, fuel);
+    }
+
+    virtual ~Interp() { }
 
     // Destructively reduce the node to whnf.  Returns the same node, 
     // possibily with indirections followed.
     Node* reduce_whnf(Node* node);
 
+  private:
+    Interp(const Interp&);  // No copying
+
+    void init(size_t heap_size, int fuel);
+
     Node* subst(Node* body, depth_t var, Node* arg, depth_t shift);
 
-  private:
+    Node* allocate_node();
+
     int _fuel;
+    Pool* _heap;
 };
 
 #endif

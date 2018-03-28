@@ -1,4 +1,33 @@
+#include <cassert>
+#include <new>
+#include <stdexcept>
+
 #include "Vatican.h"
+
+Pool::Pool(size_t heapsize) {
+    _pool_start = _cur = new byte[heapsize];
+    _pool_end = _pool_start + heapsize;
+}
+
+Pool::~Pool() {
+    delete _pool_start;
+}
+
+void* Pool::allocate(size_t size) {
+    if (_cur + size < _pool_end) {
+        void* ret = (void*)_cur;
+        _cur += size;
+        return ret;
+    }
+    else {
+        return 0;
+    }
+}
+
+void Pool::clear() {
+    _cur = _pool_start;
+}
+
 
 
 Node* squash_indirs(Node* node) {
@@ -13,6 +42,11 @@ Node* squash_indirs(Node* node) {
         iter = next;
     }
     return end;
+}
+
+void Interp::init(size_t heap_size, int fuel) {
+    _heap = new Pool(heap_size);
+    _fuel = fuel;
 }
 
 Node* Interp::reduce_whnf(Node* node) {
@@ -92,7 +126,7 @@ Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
                 return arg;
             }
             else {
-                Node* ret = new Node;   // TODO gc
+                Node* ret = allocate_node();
                 ret->type = NODETYPE_VAR;
                 ret->blocked = true;
                 ret->depth = newdepth;
@@ -100,7 +134,7 @@ Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
             }
         }
         break; case NODETYPE_LAMBDA: {
-            Node* substbody = new Node;  // TODO gc
+            Node* substbody = allocate_node();
             substbody->type = NODETYPE_SUBST;
             substbody->blocked = false;
             substbody->depth = newdepth+1;
@@ -109,7 +143,7 @@ Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
             substbody->subst.arg = arg;
             substbody->subst.shift = shift;
 
-            Node* ret = new Node; // TODO gc
+            Node* ret = allocate_node();
             ret->type = NODETYPE_LAMBDA;
             ret->blocked = true;
             ret->depth = newdepth;
@@ -117,7 +151,7 @@ Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
             return ret;
         }
         break; case NODETYPE_APPLY: {
-            Node* newf = new Node;   // TODO gc
+            Node* newf = allocate_node();
             newf->type = NODETYPE_SUBST;
             newf->blocked = false;
             newf->depth = newdepth;
@@ -126,7 +160,7 @@ Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
             newf->subst.arg = arg;
             newf->subst.shift = shift;
 
-            Node* newx = new Node;   // TODO gc
+            Node* newx = allocate_node();
             newx->type = NODETYPE_SUBST;
             newx->blocked = false;
             newx->depth = newdepth;
@@ -135,7 +169,7 @@ Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
             newx->subst.arg = arg;
             newx->subst.shift = shift;
 
-            Node* ret = new Node;   // TODO gc
+            Node* ret = allocate_node();
             ret->type = NODETYPE_APPLY;
             ret->blocked = false;
             ret->depth = newdepth;
@@ -147,5 +181,16 @@ Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
         break; default: {
             return body;
         }
+    }
+}
+
+Node* Interp::allocate_node() {
+    void* mem = _heap->allocate(sizeof(Node));
+    if (mem == 0) {
+        // Obv do GC now
+        throw std::runtime_error("Out of memory in this heap");
+    }
+    else {
+        return new (mem) Node;
     }
 }

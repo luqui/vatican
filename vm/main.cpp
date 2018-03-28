@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include "Vatican.h"
 
 // To build nodes for testing, we pun and use var depth as a de bruijn
@@ -26,7 +27,11 @@ Node* var(int dbi) {
     Node* ret = new Node;
     ret->type = NODETYPE_VAR;
     ret->blocked = true;
-    ret->depth = dbi;
+
+    // We use negative to indicate a debruijn index, because if the graph has
+    // sharing it is possible to traverse nodes twice.  A variable's depth is
+    // always positive so there is no overlap at 0.
+    ret->depth = -dbi;
     return ret;
 };
 
@@ -57,7 +62,9 @@ void fixup_debruijn_rec(Node* node, int depth) {
             node->depth = std::max(node->apply.f->depth, node->apply.x->depth);
         }
         break; case NODETYPE_VAR: {
-            node->depth = depth - node->depth;  // Convert from deBruijn;
+            if (node->depth <= 0) {
+                node->depth = depth + node->depth;  // Convert from deBruijn;
+            }
         }
         break; default: {
         }
@@ -70,19 +77,19 @@ Node* fixup_debruijn(Node* node) {
     return node;
 };
 
-void show_node(Node* node, bool lambda_parens = false, bool apply_parens = false) {
+void show_node_rec(Node* node, bool lambda_parens, bool apply_parens) {
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
             if (lambda_parens) { std::cout << "("; }
             std::cout << "\\[" << node->depth << "]. ";
-            show_node(node->lambda.body, false, false);
+            show_node_rec(node->lambda.body, false, false);
             if (lambda_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_APPLY: {
             if (apply_parens) { std::cout << "("; }
-            show_node(node->apply.f, true, false);
+            show_node_rec(node->apply.f, true, false);
             std::cout << " ";
-            show_node(node->apply.x, true, true);
+            show_node_rec(node->apply.x, true, true);
             if (apply_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_VAR: {
@@ -93,19 +100,24 @@ void show_node(Node* node, bool lambda_parens = false, bool apply_parens = false
         }
         break; case NODETYPE_SUBST: {
             std::cout << "(";
-            show_node(node->subst.body, true, true);
+            show_node_rec(node->subst.body, true, true);
             std::cout << " @[ " << node->subst.var << " | " << node->subst.shift << " ] ";
-            show_node(node->subst.arg, true, true);
+            show_node_rec(node->subst.arg, true, true);
             std::cout << ")";
         }
         break; case NODETYPE_INDIR: {
             std::cout << "!";
-            show_node(node->indir.target, false, true);
+            show_node_rec(node->indir.target, false, true);
         }
         break; default: {
             std::cout << "UNSUPPORTED";
         }
     }
+}
+
+void show_node(Node* node) {
+    show_node_rec(node, false, false);
+    std::cout << "\n";
 }
 
 void test_idf() {
@@ -114,12 +126,36 @@ void test_idf() {
     Node* test = fixup_debruijn(apply(idf, arg));
 
     show_node(test);    
-    std::cout << "\n";
-    (new Interp())->reduce_whnf(test);
+    (new Interp())->reduce_whnf_nolimit(test);
+    if (test == arg) {
+        std::cout << "PASS\n";
+    }
+    else {
+        std::cout << "FAIL\n";
+        show_node(test);
+    }
+}
+
+void test_loop() {
+    Node* w = lambda(apply(var(0), var(0)));
+    Node* loop = apply(w,w);
+
+    Node* test = fixup_debruijn(loop);
     show_node(test);
-    std::cout << "\n";
-};
+    try {
+        (new Interp())->reduce_whnf(test, 1000);
+        // Shouldn't ever get here
+        std::cout << "FAIL\n";
+        show_node(test);
+    } 
+    catch (std::runtime_error& e) {
+        if (std::string(e.what()) == "Reduction stack size limit reached") {
+            std::cout << "PASS (" << e.what() << ")\n";
+        }
+    }
+}
 
 int main() {
     test_idf();
+    test_loop();
 }

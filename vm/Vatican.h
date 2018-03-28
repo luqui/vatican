@@ -58,11 +58,19 @@ struct Node {
 
 class Interp {
   public:
+    void reduce_whnf_nolimit(Node* node) {
+        reduce_whnf(node, -1);
+    };
+    
     // Destructively reduce the node to whnf.
-    void reduce_whnf(Node* node) {
+    void reduce_whnf(Node* node, int stack_limit) {
       REDO:
         if (node->blocked) {
             return;
+        }
+
+        if (stack_limit == 0) {
+            throw std::runtime_error("Reduction stack size limit reached");
         }
 
         switch (node->type) {
@@ -71,8 +79,16 @@ class Interp {
             }
             break; case NODETYPE_APPLY: {
                 Node* f = node->apply.f;
-                reduce_whnf(f);
-                assert(f->type == NODETYPE_LAMBDA);
+                reduce_whnf(f, stack_limit-1);
+
+                // TODO should clean this up.  Be consistent about indirs.
+                while (f->type == NODETYPE_INDIR) {
+                    f = f->indir.target;
+                }
+                if (f->type != NODETYPE_LAMBDA) {
+                    node->blocked = true;
+                    return;
+                }
                 
                 depth_t bind_depth = f->depth + 1;
                 depth_t shift = node->depth - bind_depth;
@@ -90,7 +106,7 @@ class Interp {
                 goto REDO;
             }
             break; case NODETYPE_SUBST: {
-                reduce_whnf(node->subst.body);
+                reduce_whnf(node->subst.body, stack_limit-1);
                 Node* substed = subst(node->subst.body, node->subst.var, node->subst.arg, node->subst.shift);
                 node->type = NODETYPE_INDIR;
                 node->indir.target = substed;
@@ -99,7 +115,7 @@ class Interp {
                 goto REDO;
             }
             break; case NODETYPE_INDIR: {
-                reduce_whnf(node->indir.target);
+                reduce_whnf(node->indir.target, stack_limit-1);
                 // Squash nested indirections
                 while (node->indir.target->type == NODETYPE_INDIR) {
                     node->indir = node->indir.target->indir;

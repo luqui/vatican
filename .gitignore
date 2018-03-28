@@ -1,0 +1,4 @@
+haskell-prototype/dist
+*.o
+*.dSym
+vm/main

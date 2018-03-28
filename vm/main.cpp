@@ -243,11 +243,43 @@ void test_scott_tuple() {
     }
 }
 
+void test_scott_stream() {
+    std::cout << "test_scott_stream\n";
+    
+    Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
+    fix->lambda.body->apply.x = fix->lambda.body;
+
+    // λx y c. c x y
+    Node* tuple = fixup_debruijn(lambda(lambda(lambda(apply(apply(var(0), var(2)), var(1))))));
+    // λt. t (λx y. x)
+    Node* fst = fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(1))))));
+    // λt. t (λx y. y)
+    Node* snd = fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(0))))));
+
+    Node* arg = prim();
+    Node* stream = apply(fix, apply(tuple, arg));
+
+    Interp* interp = new Interp;
+
+    for (int i = 0; i < 100; i++) {
+        Node* item = interp->reduce_whnf(apply(fst, stream));
+        if (item != arg) {
+            std::cout << "FAIL\n";
+            std::cout << "i = " << i << "\n";
+            show_node(item);
+            return;
+        }
+        stream = apply(snd, stream);
+    }
+
+    std::cout << "PASS\n";
+}
+
 int main() {
     test_idf();
     test_loop();
     test_fix_idf();
     test_fix_const();
     test_scott_tuple();
-    //test_infinite_scott_stream();
+    test_scott_stream();
 }

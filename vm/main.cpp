@@ -6,26 +6,26 @@
 // To build nodes for testing, we pun and use var depth as a de bruijn
 // index, then postprocess it into the correct depth form.
 Node* lambda(Node* body) {
-    Node* ret = new Node;
+    LambdaNode* ret = new LambdaNode;
     ret->type = NODETYPE_LAMBDA;
     ret->blocked = true;
     ret->depth = 0;
-    ret->lambda.body = body;
+    ret->body = body;
     return ret;
 }
 
 Node* apply(Node* f, Node* x) {
-    Node* ret = new Node;
+    ApplyNode* ret = new ApplyNode;
     ret->type = NODETYPE_APPLY;
     ret->blocked = false;
     ret->depth = 0;
-    ret->apply.f = f;
-    ret->apply.x = x;
+    ret->f = f;
+    ret->x = x;
     return ret;
 };
 
 Node* var(int dbi) {
-    Node* ret = new Node;
+    VarNode* ret = new VarNode;
     ret->type = NODETYPE_VAR;
     ret->blocked = true;
 
@@ -37,7 +37,7 @@ Node* var(int dbi) {
 };
 
 Node* prim() {
-    Node* ret = new Node;
+    PrimNode* ret = new PrimNode;
     ret->type = NODETYPE_PRIM;
     ret->blocked = true;
     ret->depth = 0;
@@ -47,20 +47,22 @@ Node* prim() {
 void fixup_debruijn_rec(Node* node, int depth) {
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
-            fixup_debruijn_rec(node->lambda.body, depth+1);
-            if (node->lambda.body->depth == depth+1) {
-                node->depth = depth;
+            LambdaNode* lambda = (LambdaNode*)node;
+            fixup_debruijn_rec(lambda->body, depth+1);
+            if (lambda->body->depth == depth+1) {
+                lambda->depth = depth;
             }
             else {
                 // Is this correct?  That a lambda that doesn't use its
                 // argument has the depth of its body?
-                node->depth = node->lambda.body->depth;
+                lambda->depth = lambda->body->depth;
             }
         }
         break; case NODETYPE_APPLY: {
-            fixup_debruijn_rec(node->apply.f, depth);
-            fixup_debruijn_rec(node->apply.x, depth);
-            node->depth = std::max(node->apply.f->depth, node->apply.x->depth);
+            ApplyNode* apply = (ApplyNode*)node;
+            fixup_debruijn_rec(apply->f, depth);
+            fixup_debruijn_rec(apply->x, depth);
+            apply->depth = std::max(apply->f->depth, apply->x->depth);
         }
         break; case NODETYPE_VAR: {
             if (node->depth <= 0) {
@@ -87,16 +89,18 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
 
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
+            LambdaNode* lambda = (LambdaNode*)node;
             if (lambda_parens) { std::cout << "("; }
-            std::cout << "\\[" << node->depth+1 << "]. ";
-            show_node_rec(node->lambda.body, false, false, seen);
+            std::cout << "\\[" << lambda->depth+1 << "]. ";
+            show_node_rec(lambda->body, false, false, seen);
             if (lambda_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_APPLY: {
+            ApplyNode* apply = (ApplyNode*)node;
             if (apply_parens) { std::cout << "("; }
-            show_node_rec(node->apply.f, true, false, seen);
+            show_node_rec(apply->f, true, false, seen);
             std::cout << " ";
-            show_node_rec(node->apply.x, true, true, seen);
+            show_node_rec(apply->x, true, true, seen);
             if (apply_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_VAR: {
@@ -106,15 +110,17 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
             std::cout << "PRIM";
         }
         break; case NODETYPE_SUBST: {
+            SubstNode* subst = (SubstNode*)node;
             std::cout << "(";
-            show_node_rec(node->subst.body, true, true, seen);
-            std::cout << " @[ " << node->subst.var << " | " << node->subst.shift << " ] ";
-            show_node_rec(node->subst.arg, true, true, seen);
+            show_node_rec(subst->body, true, true, seen);
+            std::cout << " @[ " << subst->var << " | " << subst->shift << " ] ";
+            show_node_rec(subst->arg, true, true, seen);
             std::cout << ")";
         }
         break; case NODETYPE_INDIR: {
+            IndirNode* indir = (IndirNode*)node;
             std::cout << "!";
-            show_node_rec(node->indir.target, true, true, seen);
+            show_node_rec(indir->target, true, true, seen);
         }
         break; default: {
             std::cout << "UNSUPPORTED";
@@ -171,7 +177,7 @@ void test_loop() {
 void test_fix_idf() {
     std::cout << "test_fix_idf\n";
     Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
-    fix->lambda.body->apply.x = fix->lambda.body;
+    ((ApplyNode*)((LambdaNode*)fix)->body)->x = ((LambdaNode*)fix)->body;
     Node* idf = fixup_debruijn(lambda(var(0)));
     Node* test = apply(fix, idf);
     show_node(test);
@@ -193,7 +199,7 @@ void test_fix_idf() {
 void test_fix_const() {
     std::cout << "test_fix_const\n";
     Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
-    fix->lambda.body->apply.x = fix->lambda.body;
+    ((ApplyNode*)((LambdaNode*)fix)->body)->x = ((LambdaNode*)fix)->body;
 
     Node* arg = prim();
     Node* test = apply(fix, fixup_debruijn(lambda(arg)));
@@ -247,7 +253,7 @@ void test_scott_stream(size_t heap_size) {
     std::cout << "test_scott_stream(" << heap_size << ")\n";
     
     Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
-    fix->lambda.body->apply.x = fix->lambda.body;
+    ((ApplyNode*)((LambdaNode*)fix)->body)->x = ((LambdaNode*)fix)->body;
 
     // λx y c. c x y
     Node* tuple = fixup_debruijn(lambda(lambda(lambda(apply(apply(var(0), var(2)), var(1))))));

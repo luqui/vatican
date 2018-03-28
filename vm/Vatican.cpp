@@ -33,12 +33,12 @@ void Pool::clear() {
 Node* squash_indirs(Node* node) {
     Node* end = node;
     while (end->type == NODETYPE_INDIR) {
-        end = end->indir.target;
+        end = ((IndirNode*)end)->target;
     }
     Node* iter = node;
     while (iter->type == NODETYPE_INDIR) {
-        Node* next = iter->indir.target;
-        iter->indir.target = end;
+        Node* next = ((IndirNode*)iter)->target;
+        ((IndirNode*)iter)->target = end;
         iter = next;
     }
     return end;
@@ -66,34 +66,40 @@ Node* Interp::reduce_whnf(Node* node) {
             return node;  // Already in whnf.
         }
         break; case NODETYPE_APPLY: {
-            Node* f = node->apply.f = reduce_whnf(node->apply.f);
+            ApplyNode* apply = (ApplyNode*)node;
+            apply->f = reduce_whnf(apply->f);
             
-            if (f->type != NODETYPE_LAMBDA) {
-                node->blocked = true;
+            if (apply->f->type != NODETYPE_LAMBDA) {
+                apply->blocked = true;
                 return node;
             }
             
-            depth_t bind_depth = f->depth + 1;
-            depth_t shift = node->depth - bind_depth;
+            depth_t bind_depth = apply->f->depth + 1;
+            depth_t shift = apply->depth - bind_depth;
 
             // Very sensitive!  Don't inline, we are mutating node's type!
-            Node* subst_body = f->lambda.body;
-            Node* subst_arg = node->apply.x;
+            Node* subst_body = ((LambdaNode*)apply->f)->body;
+            Node* subst_arg = apply->x;
 
-            node->blocked = false;
-            node->type = NODETYPE_SUBST;
-            node->subst.body   = subst_body;
-            node->subst.var    = bind_depth;
-            node->subst.arg    = subst_arg;
-            node->subst.shift  = shift;
+            // Note this overwrites node!
+            SubstNode* subst = new (node) SubstNode;
+            subst->blocked = false;
+            subst->type    = NODETYPE_SUBST;
+            subst->body    = subst_body;
+            subst->var     = bind_depth;
+            subst->arg     = subst_arg;
+            subst->shift   = shift;
             goto REDO;
         }
         break; case NODETYPE_SUBST: {
-            node->subst.body = reduce_whnf(node->subst.body);
-            Node* substed = subst(node->subst.body, node->subst.var, node->subst.arg, node->subst.shift);
-            node->type = NODETYPE_INDIR;
-            node->depth = substed->depth;
-            node->indir.target = substed;
+            SubstNode* subst = (SubstNode*)node;
+            subst->body = reduce_whnf(subst->body);
+            Node* substed = substitute(subst->body, subst->var, subst->arg, subst->shift);
+
+            IndirNode* indir = new (node) IndirNode;
+            indir->type = NODETYPE_INDIR;
+            indir->depth = substed->depth;
+            indir->target = substed;
             // XXX update depth and blocked?
             //   (Really I think indir needs to precede these properties)
             goto REDO;
@@ -109,7 +115,7 @@ Node* Interp::reduce_whnf(Node* node) {
 }
 
 
-Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
+Node* Interp::substitute(Node* body, depth_t var, Node* arg, depth_t shift) {
     body = squash_indirs(body);
 
     // If the depth of the body is less than the depth of the variable we are
@@ -122,11 +128,12 @@ Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
     depth_t newdepth = body->depth + shift;
     switch (body->type) {
         break; case NODETYPE_VAR: {
-            if (body->depth == var) {
+            VarNode* varnode = (VarNode*)body;
+            if (varnode->depth == var) {
                 return arg;
             }
             else {
-                Node* ret = allocate_node();
+                VarNode* ret = allocate_node<VarNode>();
                 ret->type = NODETYPE_VAR;
                 ret->blocked = true;
                 ret->depth = newdepth;
@@ -134,63 +141,56 @@ Node* Interp::subst(Node* body, depth_t var, Node* arg, depth_t shift) {
             }
         }
         break; case NODETYPE_LAMBDA: {
-            Node* substbody = allocate_node();
+            LambdaNode* lambda = (LambdaNode*)body;
+            
+            SubstNode* substbody = allocate_node<SubstNode>();
             substbody->type = NODETYPE_SUBST;
             substbody->blocked = false;
             substbody->depth = newdepth+1;
-            substbody->subst.body = body->lambda.body;
-            substbody->subst.var = var;
-            substbody->subst.arg = arg;
-            substbody->subst.shift = shift;
+            substbody->body = lambda->body;
+            substbody->var = var;
+            substbody->arg = arg;
+            substbody->shift = shift;
 
-            Node* ret = allocate_node();
+            LambdaNode* ret = allocate_node<LambdaNode>();
             ret->type = NODETYPE_LAMBDA;
             ret->blocked = true;
             ret->depth = newdepth;
-            ret->lambda.body = substbody;
+            ret->body = substbody;
             return ret;
         }
         break; case NODETYPE_APPLY: {
-            Node* newf = allocate_node();
+            ApplyNode* apply = (ApplyNode*)body;
+        
+            SubstNode* newf = allocate_node<SubstNode>();
             newf->type = NODETYPE_SUBST;
             newf->blocked = false;
             newf->depth = newdepth;
-            newf->subst.body = body->apply.f;
-            newf->subst.var = var;
-            newf->subst.arg = arg;
-            newf->subst.shift = shift;
+            newf->body = apply->f;
+            newf->var = var;
+            newf->arg = arg;
+            newf->shift = shift;
 
-            Node* newx = allocate_node();
+            SubstNode* newx = allocate_node<SubstNode>();
             newx->type = NODETYPE_SUBST;
             newx->blocked = false;
             newx->depth = newdepth;
-            newx->subst.body = body->apply.x;
-            newx->subst.var = var;
-            newx->subst.arg = arg;
-            newx->subst.shift = shift;
+            newx->body = apply->x;
+            newx->var = var;
+            newx->arg = arg;
+            newx->shift = shift;
 
-            Node* ret = allocate_node();
+            ApplyNode* ret = allocate_node<ApplyNode>();
             ret->type = NODETYPE_APPLY;
             ret->blocked = false;
             ret->depth = newdepth;
-            ret->apply.f = newf;
-            ret->apply.x = newx;
+            ret->f = newf;
+            ret->x = newx;
 
             return ret;
         }
         break; default: {
             return body;
         }
-    }
-}
-
-Node* Interp::allocate_node() {
-    void* mem = _heap->allocate(sizeof(Node));
-    if (mem == 0) {
-        // Obv do GC now
-        throw std::runtime_error("Out of memory in this heap");
-    }
-    else {
-        return new (mem) Node;
     }
 }

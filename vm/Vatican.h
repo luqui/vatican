@@ -15,44 +15,44 @@ enum NodeType
     , NODETYPE_PRIM
     };
 
-struct LambdaData {
+struct Node {
+    NodeType type;
+    bool blocked;
+    depth_t depth;
+};
+
+struct LambdaNode : Node {
     Node* body;
 };
 
-struct ApplyData {
-    Node* f;
-    Node* x;
-};
-
-struct SubstData {
+struct SubstNode : Node {
     Node* body;
     depth_t var;
     Node* arg;
     depth_t shift;
 };
 
-struct VarData { };
+struct ApplyNode : Node {
+    union {
+        struct {
+            Node* f;
+            Node* x;
+        };
 
-struct IndrData {
+        // This is to make sure we have enough space for the transmogrification
+        SubstNode _subst; 
+    };
+};
+
+struct VarNode : Node 
+{ };
+
+struct IndirNode : Node {
     Node* target;
 };
 
-struct PrimData { };
-
-struct Node {
-    NodeType type;
-    bool blocked;
-    depth_t depth;
-
-    union {
-        LambdaData lambda;
-        ApplyData apply;
-        SubstData subst;
-        VarData var;
-        IndrData indir;
-        PrimData prim;
-    };
-};
+struct PrimNode : Node 
+{ };
 
 
 class Pool {
@@ -95,9 +95,19 @@ class Interp {
 
     void init(size_t heap_size, int fuel);
 
-    Node* subst(Node* body, depth_t var, Node* arg, depth_t shift);
+    Node* substitute(Node* body, depth_t var, Node* arg, depth_t shift);
 
-    Node* allocate_node();
+    template<class T> 
+    T* allocate_node() {
+        void* mem = _heap->allocate(sizeof(T));
+        if (mem == 0) {
+            // Obv do GC now
+            throw std::runtime_error("Out of memory in this heap");
+        }
+        else {
+            return new (mem) T;
+        }
+    }
 
     int _fuel;
     Pool* _heap;

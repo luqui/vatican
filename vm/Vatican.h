@@ -148,14 +148,20 @@ class Interp {
                 }
             }
             break; case NODETYPE_LAMBDA: {
-                Node* ret = new Node;  // TODO gc
-                ret->type = NODETYPE_SUBST;
-                ret->blocked = false;
-                ret->depth = newdepth+1;
-                ret->subst.body = body->lambda.body;
-                ret->subst.var = var;
-                ret->subst.arg = arg;
-                ret->subst.shift = shift;
+                Node* substbody = new Node;  // TODO gc
+                substbody->type = NODETYPE_SUBST;
+                substbody->blocked = false;
+                substbody->depth = newdepth+1;
+                substbody->subst.body = body->lambda.body;
+                substbody->subst.var = var;
+                substbody->subst.arg = arg;
+                substbody->subst.shift = shift;
+
+                Node* ret = new Node; // TODO gc
+                ret->type = NODETYPE_LAMBDA;
+                ret->blocked = true;
+                ret->depth = newdepth;
+                ret->lambda.body = substbody;
                 return ret;
             }
             break; case NODETYPE_APPLY: {

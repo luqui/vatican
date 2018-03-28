@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <set>
 #include "Vatican.h"
 
 // To build nodes for testing, we pun and use var depth as a de bruijn
@@ -77,19 +78,25 @@ Node* fixup_debruijn(Node* node) {
     return node;
 };
 
-void show_node_rec(Node* node, bool lambda_parens, bool apply_parens) {
+void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<Node*>& seen) {
+    if (seen.find(node) != seen.end()) {
+        std::cout << "LOOP";
+        return;
+    }
+    seen.insert(node);
+
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
             if (lambda_parens) { std::cout << "("; }
             std::cout << "\\[" << node->depth << "]. ";
-            show_node_rec(node->lambda.body, false, false);
+            show_node_rec(node->lambda.body, false, false, seen);
             if (lambda_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_APPLY: {
             if (apply_parens) { std::cout << "("; }
-            show_node_rec(node->apply.f, true, false);
+            show_node_rec(node->apply.f, true, false, seen);
             std::cout << " ";
-            show_node_rec(node->apply.x, true, true);
+            show_node_rec(node->apply.x, true, true, seen);
             if (apply_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_VAR: {
@@ -100,14 +107,14 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens) {
         }
         break; case NODETYPE_SUBST: {
             std::cout << "(";
-            show_node_rec(node->subst.body, true, true);
+            show_node_rec(node->subst.body, true, true, seen);
             std::cout << " @[ " << node->subst.var << " | " << node->subst.shift << " ] ";
-            show_node_rec(node->subst.arg, true, true);
+            show_node_rec(node->subst.arg, true, true, seen);
             std::cout << ")";
         }
         break; case NODETYPE_INDIR: {
             std::cout << "!";
-            show_node_rec(node->indir.target, true, true);
+            show_node_rec(node->indir.target, true, true, seen);
         }
         break; default: {
             std::cout << "UNSUPPORTED";
@@ -116,7 +123,8 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens) {
 }
 
 void show_node(Node* node) {
-    show_node_rec(node, false, false);
+    std::set<Node*> seen;
+    show_node_rec(node, false, false, seen);
     std::cout << "\n";
 }
 
@@ -152,10 +160,53 @@ void test_loop() {
         if (std::string(e.what()) == "Out of fuel") {
             std::cout << "PASS\n";
         }
+        else {
+            throw;
+        }
+    }
+}
+
+void test_fix_idf() {
+    Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
+    fix->lambda.body->apply.x = fix->lambda.body;
+    Node* idf = fixup_debruijn(lambda(var(0)));
+    Node* test = apply(fix, idf);
+    show_node(test);
+    try {
+        test = (new Interp(1000))->reduce_whnf(test);
+        std::cout << "FAIL\n";
+        show_node(test);
+    }
+    catch (std::runtime_error& e) {
+        if (std::string(e.what()) == "Out of fuel") {
+            std::cout << "PASS\n";
+        }
+        else {
+            throw;
+        }
+    }
+}
+
+void test_fix_const() {
+    Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
+    fix->lambda.body->apply.x = fix->lambda.body;
+
+    Node* arg = prim();
+    Node* test = apply(fix, fixup_debruijn(lambda(arg)));
+    show_node(test);
+    test = (new Interp())->reduce_whnf(test);
+    if (test == arg) {
+        std::cout << "PASS\n";
+    }
+    else {
+        std::cout << "FAIL\n";
+        show_node(test);
     }
 }
 
 int main() {
     test_idf();
     test_loop();
+    test_fix_idf();
+    test_fix_const();
 }

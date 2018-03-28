@@ -107,7 +107,7 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens) {
         }
         break; case NODETYPE_INDIR: {
             std::cout << "!";
-            show_node_rec(node->indir.target, false, true);
+            show_node_rec(node->indir.target, true, true);
         }
         break; default: {
             std::cout << "UNSUPPORTED";
@@ -126,7 +126,7 @@ void test_idf() {
     Node* test = fixup_debruijn(apply(idf, arg));
 
     show_node(test);    
-    (new Interp())->reduce_whnf_nolimit(test);
+    test = (new Interp())->reduce_whnf(test);
     if (test == arg) {
         std::cout << "PASS\n";
     }
@@ -143,14 +143,14 @@ void test_loop() {
     Node* test = fixup_debruijn(loop);
     show_node(test);
     try {
-        (new Interp())->reduce_whnf(test, 1000);
+        test = (new Interp(1000))->reduce_whnf(test);
         // Shouldn't ever get here
         std::cout << "FAIL\n";
         show_node(test);
     } 
     catch (std::runtime_error& e) {
-        if (std::string(e.what()) == "Reduction stack size limit reached") {
-            std::cout << "PASS (" << e.what() << ")\n";
+        if (std::string(e.what()) == "Out of fuel") {
+            std::cout << "PASS\n";
         }
     }
 }

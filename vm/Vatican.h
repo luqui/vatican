@@ -58,36 +58,34 @@ struct Node {
 
 class Interp {
   public:
-    void reduce_whnf_nolimit(Node* node) {
-        reduce_whnf(node, -1);
-    };
-    
-    // Destructively reduce the node to whnf.
-    void reduce_whnf(Node* node, int stack_limit) {
+    Interp() : _fuel(0) { }
+
+    Interp(int fuel) : _fuel(fuel) { }
+
+    // Destructively reduce the node to whnf.  Returns the same node, 
+    // possibily with indirections followed.
+    Node* reduce_whnf(Node* node) {
       REDO:
-        if (node->blocked) {
-            return;
+        if (_fuel > 0 && --_fuel == 0) {
+            throw std::runtime_error("Out of fuel");
         }
 
-        if (stack_limit == 0) {
-            throw std::runtime_error("Reduction stack size limit reached");
+        node = squash_indirs(node);
+
+        if (node->blocked) {
+            return node;
         }
 
         switch (node->type) {
             break; case NODETYPE_LAMBDA: {
-                return;  // Already in whnf.
+                return node;  // Already in whnf.
             }
             break; case NODETYPE_APPLY: {
-                Node* f = node->apply.f;
-                reduce_whnf(f, stack_limit-1);
-
-                // TODO should clean this up.  Be consistent about indirs.
-                while (f->type == NODETYPE_INDIR) {
-                    f = f->indir.target;
-                }
+                Node* f = node->apply.f = reduce_whnf(node->apply.f);
+                
                 if (f->type != NODETYPE_LAMBDA) {
                     node->blocked = true;
-                    return;
+                    return node;
                 }
                 
                 depth_t bind_depth = f->depth + 1;
@@ -106,29 +104,28 @@ class Interp {
                 goto REDO;
             }
             break; case NODETYPE_SUBST: {
-                reduce_whnf(node->subst.body, stack_limit-1);
+                node->subst.body = reduce_whnf(node->subst.body);
                 Node* substed = subst(node->subst.body, node->subst.var, node->subst.arg, node->subst.shift);
                 node->type = NODETYPE_INDIR;
+                node->depth = substed->depth;
                 node->indir.target = substed;
                 // XXX update depth and blocked?
                 //   (Really I think indir needs to precede these properties)
                 goto REDO;
             }
             break; case NODETYPE_INDIR: {
-                reduce_whnf(node->indir.target, stack_limit-1);
-                // Squash nested indirections
-                while (node->indir.target->type == NODETYPE_INDIR) {
-                    node->indir = node->indir.target->indir;
-                    // XXX update depth and such?
-                }
+                throw std::runtime_error("Indir nodes should have been squashed already");
             }
             break; default: { 
                 node->blocked = true;
+                return node;
             }
         }
     };
 
     Node* subst(Node* body, depth_t var, Node* arg, depth_t shift) {
+        body = squash_indirs(body);
+
         // If the depth of the body is less than the depth of the variable we are
         // substituting, the variable cannot possibly occur in the body, so just
         // dissolve away.
@@ -189,14 +186,28 @@ class Interp {
 
                 return ret;
             }
-            break; case NODETYPE_INDIR: {
-                return subst(body->indir.target, var, arg, shift);  // TODO tail call
-            }
             break; default: {
                 return body;
             }
         }
     };
+
+  private:
+    Node* squash_indirs(Node* node) {
+        Node* end = node;
+        while (end->type == NODETYPE_INDIR) {
+            end = end->indir.target;
+        }
+        Node* iter = node;
+        while (iter->type == NODETYPE_INDIR) {
+            Node* next = iter->indir.target;
+            iter->indir.target = end;
+            iter = next;
+        }
+        return end;
+    }
+
+    int _fuel;
 };
 
 #endif

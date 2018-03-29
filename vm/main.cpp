@@ -116,12 +116,15 @@ void show_node(Node* node) {
 
 void test_idf() {
     std::cout << "test_idf\n";
+
+    Interp* interp = new Interp;
+
     Node* idf = lambda(var(0));
-    Node* arg = prim();
-    Node* test = fixup_debruijn(apply(idf, arg));
+    Node* arg = interp->add_root(prim());
+    Node* test = interp->add_root(fixup_debruijn(apply(idf, arg)));
 
     show_node(test);    
-    test = (new Interp())->reduce_whnf(test);
+    test = interp->reduce_whnf(test);
     if (test == arg) {
         std::cout << "PASS\n";
     }
@@ -133,13 +136,17 @@ void test_idf() {
 
 void test_loop() {
     std::cout << "test_loop\n";
+
+    Interp* interp = new Interp(DEFAULT_HEAP_SIZE, 1000);
+
     Node* w = lambda(apply(var(0), var(0)));
     Node* loop = apply(w,w);
 
-    Node* test = fixup_debruijn(loop);
+    Node* test = interp->add_root(fixup_debruijn(loop));
     show_node(test);
+
     try {
-        test = (new Interp(DEFAULT_HEAP_SIZE, 1000))->reduce_whnf(test);
+        test = interp->reduce_whnf(test);
         // Shouldn't ever get here
         std::cout << "FAIL\n";
         show_node(test);
@@ -156,13 +163,16 @@ void test_loop() {
 
 void test_fix_idf() {
     std::cout << "test_fix_idf\n";
+
+    Interp* interp = new Interp(DEFAULT_HEAP_SIZE, 1000);
+
     Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
     ((ApplyNode*)((LambdaNode*)fix)->body)->x = ((LambdaNode*)fix)->body;
     Node* idf = fixup_debruijn(lambda(var(0)));
-    Node* test = apply(fix, idf);
+    Node* test = interp->add_root(apply(fix, idf));
     show_node(test);
     try {
-        test = (new Interp(DEFAULT_HEAP_SIZE, 1000))->reduce_whnf(test);
+        test = interp->reduce_whnf(test);
         std::cout << "FAIL\n";
         show_node(test);
     }
@@ -178,13 +188,16 @@ void test_fix_idf() {
 
 void test_fix_const() {
     std::cout << "test_fix_const\n";
+
+    Interp* interp = new Interp;
+
     Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
     ((ApplyNode*)((LambdaNode*)fix)->body)->x = ((LambdaNode*)fix)->body;
 
-    Node* arg = prim();
-    Node* test = apply(fix, fixup_debruijn(lambda(arg)));
+    Node* arg = interp->add_root(prim());
+    Node* test = interp->add_root(apply(fix, fixup_debruijn(lambda(arg))));
     show_node(test);
-    test = (new Interp())->reduce_whnf(test);
+    test = interp->reduce_whnf(test);
     if (test == arg) {
         std::cout << "PASS\n";
     }
@@ -196,19 +209,20 @@ void test_fix_const() {
 
 void test_scott_tuple() {
     std::cout << "test_scott_tuple\n";
-    // λx y c. c x y
-    Node* tuple = fixup_debruijn(lambda(lambda(lambda(apply(apply(var(0), var(2)), var(1))))));
-    // λt. t (λx y. x)
-    Node* fst = fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(1))))));
-    // λt. t (λx y. y)
-    Node* snd = fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(0))))));
-
-    Node* primx = prim();
-    Node* primy = prim();
 
     Interp* interp = new Interp;
 
-    Node* tup = apply(apply(tuple, primx), primy);
+    // λx y c. c x y
+    Node* tuple = fixup_debruijn(lambda(lambda(lambda(apply(apply(var(0), var(2)), var(1))))));
+    // λt. t (λx y. x)
+    Node* fst = interp->add_root(fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(1)))))));
+    // λt. t (λx y. y)
+    Node* snd = interp->add_root(fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(0)))))));
+
+    Node* primx = interp->add_root(prim());
+    Node* primy = interp->add_root(prim());
+
+    Node* tup = interp->add_root(apply(apply(tuple, primx), primy));
 
     Node* resultx = interp->reduce_whnf(apply(fst, tup));
     if (resultx == primx) {
@@ -231,6 +245,8 @@ void test_scott_tuple() {
 
 void test_scott_stream(size_t heap_size) {
     std::cout << "test_scott_stream(" << heap_size << ")\n";
+
+    Interp* interp = new Interp(heap_size, 0);
     
     Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
     ((ApplyNode*)((LambdaNode*)fix)->body)->x = ((LambdaNode*)fix)->body;
@@ -238,14 +254,12 @@ void test_scott_stream(size_t heap_size) {
     // λx y c. c x y
     Node* tuple = fixup_debruijn(lambda(lambda(lambda(apply(apply(var(0), var(2)), var(1))))));
     // λt. t (λx y. x)
-    Node* fst = fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(1))))));
+    Node* fst = interp->add_root(fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(1)))))));
     // λt. t (λx y. y)
-    Node* snd = fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(0))))));
+    Node* snd = interp->add_root(fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(0)))))));
 
-    Node* arg = prim();
-    Node* stream = apply(fix, apply(tuple, arg));
-
-    Interp* interp = new Interp(heap_size, 0);
+    Node* arg = interp->add_root(prim());
+    Node* stream = interp->add_root(apply(fix, apply(tuple, arg)));
 
     try {
         for (int i = 0; i < 100; i++) {

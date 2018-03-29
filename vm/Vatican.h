@@ -1,6 +1,7 @@
 #ifndef __VATICAN_H__
 #define __VATICAN_H__
 
+#include <vector>
 
 typedef int depth_t;
 typedef unsigned char byte;
@@ -15,15 +16,27 @@ enum NodeType
     , NODETYPE_PRIM
     };
 
+class NodeVisitor {
+public:
+    virtual ~NodeVisitor() { }
+    virtual void visit(Node*&) = 0;
+};
+
 struct Node {
     Node(NodeType type, bool blocked, depth_t depth) 
-        : type(type), blocked(blocked), depth(depth)
+        : gc_next(0), depth(depth), blocked(blocked), type(type)
     { }
 
-    NodeType type;
-    bool blocked;
+    Node* gc_next;
     depth_t depth;
+    bool blocked;
+    NodeType type;
+
+    virtual void visit(NodeVisitor* visitor) = 0;
+    virtual size_t size() = 0;
+    virtual Node* copy(void* target) = 0;
 };
+
 
 struct LambdaNode : Node {
     LambdaNode(depth_t depth, Node* body) 
@@ -32,6 +45,14 @@ struct LambdaNode : Node {
     { }
 
     Node* body;
+
+    void visit(NodeVisitor* visitor) {
+        visitor->visit(body);
+    }
+    size_t size() { return sizeof(LambdaNode); }
+    Node* copy(void* target) {
+        return new (target) LambdaNode(*this);
+    } 
 };
 
 // This is separated out so that we can pad ApplyNode appropriately.
@@ -53,6 +74,15 @@ struct SubstNode : Node {
     }
         
     SubstData data;
+
+    void visit(NodeVisitor* visitor) {
+        visitor->visit(data.body);
+        visitor->visit(data.arg);
+    }
+    size_t size() { return sizeof(SubstNode); }
+    Node* copy(void* target) {
+        return new (target) SubstNode(*this);
+    } 
 };
 
 struct ApplyNode : Node {
@@ -71,12 +101,27 @@ struct ApplyNode : Node {
         // This is to make sure we have enough space for the transmogrification
         SubstData _padding;
     };
+
+    void visit(NodeVisitor* visitor) {
+        visitor->visit(f);
+        visitor->visit(x);
+    }
+    size_t size() { return sizeof(ApplyNode); }
+    Node* copy(void* target) {
+        return new (target) ApplyNode(*this);
+    } 
 };
 
 struct VarNode : Node {
     VarNode(depth_t depth)
         : Node(NODETYPE_VAR, true, depth)
     { }
+
+    void visit(NodeVisitor* visitor) { }
+    size_t size() { return sizeof(VarNode); }
+    Node* copy(void* target) {
+        return new (target) VarNode(*this);
+    } 
 };
 
 struct IndirNode : Node {
@@ -86,6 +131,15 @@ struct IndirNode : Node {
     { }
 
     Node* target;
+
+    void visit(NodeVisitor* visitor) {
+        // XXX I think indir is a special case, so not sure what this should be...
+        visitor->visit(target);
+    }
+    size_t size() { return sizeof(IndirNode); }
+    Node* copy(void* target) {
+        return new (target) IndirNode(*this);
+    } 
 };
 
 struct PrimNode : Node 
@@ -93,6 +147,12 @@ struct PrimNode : Node
     PrimNode()
         : Node(NODETYPE_PRIM, true, 0)
     { }
+
+    void visit(NodeVisitor* visitor) { }
+    size_t size() { return sizeof(PrimNode); }
+    Node* copy(void* target) {
+        return new (target) PrimNode(*this);
+    } 
 };
 
 
@@ -106,6 +166,14 @@ class Pool {
 
     // Empties the pool for reuse.
     void clear();
+
+    bool contains(void* ptr) {
+        return _pool_start <= ptr && ptr < _pool_end;
+    }
+
+    size_t size() const {
+        return _pool_end - _pool_start;
+    }
   private:
     byte* _pool_start;
     byte* _cur;
@@ -131,6 +199,11 @@ class Interp {
     // possibily with indirections followed.
     Node* reduce_whnf(Node* node);
 
+    Node* add_root(Node* node) {
+        _root_set.push_back(node);
+        return node;
+    }
+
   private:
     Interp(const Interp&);  // No copying
 
@@ -140,18 +213,33 @@ class Interp {
 
     template<class T> 
     void* allocate_node() {
-        void* mem = _heap->allocate(sizeof(T));
+        return allocate_node(sizeof(T));
+    }
+    
+    void* allocate_node(size_t size) {
+        void* mem = _heap->allocate(size);
         if (mem == 0) {
-            // Obv do GC now
-            throw std::runtime_error("Out of memory in this heap");
+            run_gc();
+            void* mem2 = _heap->allocate(size);
+            if (mem2 == 0) {
+                throw std::runtime_error("Couldn't GC enough memory.");
+            }
+            else {  
+                return mem2;
+            }
         }
         else {
             return mem;
         }
     }
 
+    void run_gc();
+
     int _fuel;
     Pool* _heap;
+    Pool* _backup_heap;
+    
+    std::vector<Node*> _root_set;
 };
 
 #endif

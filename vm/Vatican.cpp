@@ -1,6 +1,7 @@
 #include <cassert>
 #include <new>
 #include <stdexcept>
+#include <iostream>
 
 #include "Vatican.h"
 
@@ -26,8 +27,10 @@ void* Pool::allocate(size_t size) {
 
 void Pool::clear() {
     _cur = _pool_start;
-}
 
+    // We clear it for now to catch any bugs faster.
+    memset(_pool_start, 0, size());
+}
 
 
 Node* squash_indirs(Node* node) {
@@ -46,6 +49,7 @@ Node* squash_indirs(Node* node) {
 
 void Interp::init(size_t heap_size, int fuel) {
     _heap = new Pool(heap_size);
+    _backup_heap = 0;
     _fuel = fuel;
 }
 
@@ -155,3 +159,91 @@ Node* Interp::substitute(Node* body, depth_t var, Node* arg, depth_t shift) {
         }
     }
 }
+
+
+class GCVisitor : public NodeVisitor {
+public:
+    GCVisitor(Pool* old_pool, Node** gc_stack)
+        : work_left(false)
+        , _gc_stack(gc_stack)
+        , _old_pool(old_pool)
+    { }
+
+    void visit(Node*& node) {
+        node = squash_indirs(node);
+        if (_old_pool->contains(node)) {
+            node->gc_next = *_gc_stack;
+            *_gc_stack = node;
+            work_left = true;
+        }
+    }
+
+    bool work_left;
+
+private:
+    Node** _gc_stack;
+    Pool* _old_pool;
+};
+
+void Interp::run_gc() {
+    std::cout << "RUNNING GC\n";
+    if (_backup_heap == 0) {
+        _backup_heap = new Pool(_heap->size());    
+    }
+    std::swap(_heap, _backup_heap);
+    _heap->clear();
+
+    Node* top = 0;
+    Node* cleanup = 0;
+    for (std::vector<Node*>::iterator i = _root_set.begin(); i != _root_set.end(); ++i) {
+        (*i)->gc_next = top;
+        top = *i;
+    }
+
+    while (top) {
+        // Remove the node from the gc stack
+        Node* node = top;
+        top = node->gc_next;
+        node->gc_next = 0;
+
+        // Copy node to new pool (if it was in the old pool, so we don't copy 
+        // externally allocated things).
+        Node* copied;
+        if (_backup_heap->contains(node)) {
+            copied = node->copy(allocate_node(node->size()));
+        }
+        else {
+            copied = node;
+        }
+
+        // Add children to gc stack (and update indirections if already moved)
+        GCVisitor visitor(_backup_heap, &top);
+        node->visit(&visitor);
+        
+        // Make the old node an indirection to the new one (if it was copied)
+        if (node != copied) {
+            assert(node->size() >= sizeof(IndirNode));
+            new (node) IndirNode(copied);
+        }
+
+        // Add the node to the cleanup stack if it had uncopied children.
+        if (visitor.work_left) {
+            copied->gc_next = cleanup;
+            cleanup = copied;
+        }
+    }
+
+    while (cleanup) {
+        // Remove the node from the cleanup stack
+        Node* node = cleanup;
+        cleanup = node->gc_next;
+        node->gc_next = 0;
+
+        // Update indirections.  Everything should be copied at this point.
+        GCVisitor visitor(_backup_heap, &top);
+        node->visit(&visitor);
+        assert(!visitor.work_left);
+    }
+}
+
+

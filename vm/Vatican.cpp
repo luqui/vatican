@@ -172,10 +172,11 @@ public:
     void visit(Node*& node) {
         node = squash_indirs(node);
         if (_old_pool->contains(node)) {
-            std::cout << "GC ----------- Adding " << node << "\n";
-            assert(node->gc_next == 0);
-            node->gc_next = *_gc_stack;
-            *_gc_stack = node;
+            if (node->gc_next == 0) {
+                std::cout << "GC ----------- Adding " << node << "\n";
+                node->gc_next = *_gc_stack;
+                *_gc_stack = node;
+            }
             work_left = true;
         }
     }

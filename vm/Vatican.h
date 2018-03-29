@@ -122,6 +122,10 @@ struct VarNode : Node {
     Node* copy(void* target) {
         return new (target) VarNode(*this);
     } 
+
+private:
+    // It's possible we can use gc_next to indirect to avoid this padding.
+    Node* _indir_padding;
 };
 
 struct IndirNode : Node {
@@ -153,6 +157,9 @@ struct PrimNode : Node
     Node* copy(void* target) {
         return new (target) PrimNode(*this);
     } 
+
+private:
+    Node* _indir_padding;
 };
 
 

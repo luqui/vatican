@@ -289,5 +289,5 @@ int main() {
     test_fix_const();
     test_scott_tuple();
     test_scott_stream(DEFAULT_HEAP_SIZE);
-    test_scott_stream(1024);
+    test_scott_stream(2048);
 }

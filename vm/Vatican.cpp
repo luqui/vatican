@@ -172,6 +172,8 @@ public:
     void visit(Node*& node) {
         node = squash_indirs(node);
         if (_old_pool->contains(node)) {
+            std::cout << "GC ----------- Adding " << node << "\n";
+            assert(node->gc_next == 0);
             node->gc_next = *_gc_stack;
             *_gc_stack = node;
             work_left = true;
@@ -196,6 +198,7 @@ void Interp::run_gc() {
     Node* top = 0;
     Node* cleanup = 0;
     for (std::vector<Node*>::iterator i = _root_set.begin(); i != _root_set.end(); ++i) {
+        std::cout << "GC ----------- Adding " << *i << " (root)\n";
         (*i)->gc_next = top;
         top = *i;
     }
@@ -205,6 +208,8 @@ void Interp::run_gc() {
         Node* node = top;
         top = node->gc_next;
         node->gc_next = 0;
+
+        std::cout << "GC ----------- Visiting " << node << "\n";
 
         // Copy node to new pool (if it was in the old pool, so we don't copy 
         // externally allocated things).

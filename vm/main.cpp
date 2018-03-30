@@ -251,6 +251,62 @@ void test_scott_stream(size_t heap_size) {
     std::cout << "PASS\n";
 }
 
+void test_heap_resize() {
+    std::cout << "test_heap_resize\n";
+
+    Interp interp(4096, 0);
+    NodeMaker lib(&interp);
+
+    NodePtr idf = lib.lambda(lib.var(0));
+    lib.fixup(idf);
+
+    // λf x. x
+    NodePtr zero = lib.lambda(lib.lambda(lib.var(0)));
+    lib.fixup(zero);
+    
+    // λn f x. f (n f x)
+    NodePtr succ = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.var(1), lib.apply(lib.apply(lib.var(2), lib.var(1)), lib.var(0))))));
+    lib.fixup(succ);
+
+    // λx y. x (y succ) zero
+    NodePtr times = lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(1), lib.apply(lib.var(0), succ)), zero)));
+    lib.fixup(times);
+
+    // λf x. f (f (f (f (f (f (f (f (f (f x)))))))))
+    NodePtr ten = lib.lambda(lib.lambda(
+        lib.apply(lib.var(1),
+        lib.apply(lib.var(1),
+        lib.apply(lib.var(1),
+        lib.apply(lib.var(1),
+        lib.apply(lib.var(1),
+        lib.apply(lib.var(1),
+        lib.apply(lib.var(1),
+        lib.apply(lib.var(1),
+        lib.apply(lib.var(1),
+        lib.apply(lib.var(1), lib.var(0)))))))))))));
+    lib.fixup(ten);
+    
+    NodePtr thousand = lib.apply(lib.apply(times, lib.apply(lib.apply(times, ten), ten)), ten);
+    lib.fixup(thousand);
+
+    NodePtr arg = lib.prim();
+    lib.fixup(arg);
+
+    // thousand idf (thousand idf prim)
+    NodePtr test = lib.apply(lib.apply(thousand, idf), lib.apply(lib.apply(thousand, idf), arg));
+    lib.fixup(test);
+
+    interp.reduce_whnf(test);
+    if (test == arg) {
+        std::cout << "PASS\n";
+    }
+    else {
+        std::cout << "FAIL\n";
+        show_node(test);
+    }
+}
+
+
 int main() {
     test_idf();
     test_loop();
@@ -259,4 +315,5 @@ int main() {
     test_scott_tuple();
     test_scott_stream(DEFAULT_HEAP_SIZE);
     test_scott_stream(4096);  // Should be enough heap to carry out the calculation with GCs but no resizing
+    test_heap_resize();
 }

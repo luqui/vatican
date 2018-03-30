@@ -323,17 +323,10 @@ void* Interp::allocate_node(size_t size) {
 }
 
 void NodeMaker::fixup(const NodePtr& ptr) {
-    std::set<Node*> seen;
-    fixup_rec(ptr._ptr, 0, seen);
+    fixup_rec(ptr._ptr, 0);
 }
 
-void NodeMaker::fixup_rec(Node* node, depth_t depth, std::set<Node*>& seen) {
-    // If we hit this assert, it means that there is DAGness in a debruijn
-    // graph, which is unsafe because sharing is not preserved in the transformation.
-    // De-share the graph, or fixup earlier.
-    assert(seen.find(node) == seen.end());
-    seen.insert(node);
-    
+void NodeMaker::fixup_rec(Node* node, depth_t depth) {
     if (node->type == NODETYPE_VAR ? node->depth > 0 : node->depth >= 0) {
         return;  // Already converted
     }
@@ -341,7 +334,7 @@ void NodeMaker::fixup_rec(Node* node, depth_t depth, std::set<Node*>& seen) {
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
             LambdaNode* lambda = (LambdaNode*)node;
-            fixup_rec(lambda->body, depth+1, seen);
+            fixup_rec(lambda->body, depth+1);
             if (lambda->body->depth == depth+1) {
                 lambda->depth = depth;
             }
@@ -353,8 +346,8 @@ void NodeMaker::fixup_rec(Node* node, depth_t depth, std::set<Node*>& seen) {
         }
         break; case NODETYPE_APPLY: {
             ApplyNode* apply = (ApplyNode*)node;
-            fixup_rec(apply->f, depth, seen);
-            fixup_rec(apply->x, depth, seen);
+            fixup_rec(apply->f, depth);
+            fixup_rec(apply->x, depth);
             apply->depth = std::max(apply->f->depth, apply->x->depth);
         }
         break; case NODETYPE_VAR: {
@@ -363,6 +356,7 @@ void NodeMaker::fixup_rec(Node* node, depth_t depth, std::set<Node*>& seen) {
             }
         }
         break; default: {
+            node->depth = 0;
         }
     }
 }

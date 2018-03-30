@@ -85,23 +85,23 @@ void test_idf() {
     }
 }
 
-/*
 void test_loop() {
     std::cout << "test_loop\n";
 
-    Interp* interp = new Interp(DEFAULT_HEAP_SIZE, 1000);
+    Interp interp(DEFAULT_HEAP_SIZE, 1000);
+    NodeMaker lib(&interp);
 
-    Node* w = lambda(apply(var(0), var(0)));
-    Node* loop = apply(w,w);
+    NodePtr w = lib.lambda(lib.apply(lib.var(0), lib.var(0)));
+    NodePtr loop = lib.apply(w,w);
+    lib.fixup(loop);
 
-    Node* test = interp->add_root(fixup_debruijn(loop));
-    show_node(test);
+    show_node(loop);
 
     try {
-        test = interp->reduce_whnf(test);
+        loop = interp.reduce_whnf(loop);
         // Shouldn't ever get here
         std::cout << "FAIL\n";
-        show_node(test);
+        show_node(loop);
     } 
     catch (std::runtime_error& e) {
         if (std::string(e.what()) == "Out of fuel") {
@@ -116,15 +116,14 @@ void test_loop() {
 void test_fix_idf() {
     std::cout << "test_fix_idf\n";
 
-    Interp* interp = new Interp(DEFAULT_HEAP_SIZE, 1000);
+    Interp interp(DEFAULT_HEAP_SIZE, 1000);
+    NodeMaker lib(&interp);
 
-    Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
-    ((ApplyNode*)((LambdaNode*)fix)->body)->x = ((LambdaNode*)fix)->body;
-    Node* idf = fixup_debruijn(lambda(var(0)));
-    Node* test = interp->add_root(apply(fix, idf));
+    NodePtr test = lib.apply(lib.fix(), lib.lambda(lib.var(0)));
+    lib.fixup(test);
     show_node(test);
     try {
-        test = interp->reduce_whnf(test);
+        test = interp.reduce_whnf(test);
         std::cout << "FAIL\n";
         show_node(test);
     }
@@ -141,15 +140,14 @@ void test_fix_idf() {
 void test_fix_const() {
     std::cout << "test_fix_const\n";
 
-    Interp* interp = new Interp;
+    Interp interp;
+    NodeMaker lib(&interp);
 
-    Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
-    ((ApplyNode*)((LambdaNode*)fix)->body)->x = ((LambdaNode*)fix)->body;
-
-    Node* arg = interp->add_root(prim());
-    Node* test = interp->add_root(apply(fix, fixup_debruijn(lambda(arg))));
+    NodePtr arg = lib.prim();
+    NodePtr test = lib.apply(lib.fix(), lib.lambda(arg));
+    lib.fixup(test);
     show_node(test);
-    test = interp->reduce_whnf(test);
+    test = interp.reduce_whnf(test);
     if (test == arg) {
         std::cout << "PASS\n";
     }
@@ -159,24 +157,35 @@ void test_fix_const() {
     }
 }
 
+
 void test_scott_tuple() {
     std::cout << "test_scott_tuple\n";
 
-    Interp* interp = new Interp;
+    Interp interp;
+    NodeMaker lib(&interp);
 
     // λx y c. c x y
-    Node* tuple = fixup_debruijn(lambda(lambda(lambda(apply(apply(var(0), var(2)), var(1))))));
+    NodePtr tuple = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(0), lib.var(2)), lib.var(1)))));
+    lib.fixup(tuple);
     // λt. t (λx y. x)
-    Node* fst = interp->add_root(fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(1)))))));
+    NodePtr fst = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(1)))));
+    lib.fixup(fst);
     // λt. t (λx y. y)
-    Node* snd = interp->add_root(fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(0)))))));
+    NodePtr snd = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(0)))));
+    lib.fixup(snd);
 
-    Node* primx = interp->add_root(prim());
-    Node* primy = interp->add_root(prim());
+    NodePtr primx = lib.prim();
+    lib.fixup(primx);
+    NodePtr primy = lib.prim();
+    lib.fixup(primy);
 
-    Node* tup = interp->add_root(apply(apply(tuple, primx), primy));
+    NodePtr tup = lib.apply(lib.apply(tuple, primx), primy);
+    lib.fixup(tup);
 
-    Node* resultx = interp->reduce_whnf(apply(fst, tup));
+    NodePtr testx = lib.apply(fst, tup);
+    lib.fixup(testx);
+
+    NodePtr resultx = interp.reduce_whnf(testx);
     if (resultx == primx) {
         std::cout << "PASS\n";
     }
@@ -185,7 +194,9 @@ void test_scott_tuple() {
         show_node(resultx);
     }
 
-    Node* resulty = interp->reduce_whnf(apply(snd, tup));
+    NodePtr testy = lib.apply(snd, tup);
+    lib.fixup(testy);
+    NodePtr resulty = interp.reduce_whnf(testy);
     if (resulty == primy) {
         std::cout << "PASS\n";
     }
@@ -198,31 +209,37 @@ void test_scott_tuple() {
 void test_scott_stream(size_t heap_size) {
     std::cout << "test_scott_stream(" << heap_size << ")\n";
 
-    Interp* interp = new Interp(heap_size, 0);
+    Interp interp(heap_size, 0);
+    NodeMaker lib(&interp);
     
-    Node* fix = fixup_debruijn(lambda(apply(var(0), var(0))));
-    ((ApplyNode*)((LambdaNode*)fix)->body)->x = ((LambdaNode*)fix)->body;
-
     // λx y c. c x y
-    Node* tuple = fixup_debruijn(lambda(lambda(lambda(apply(apply(var(0), var(2)), var(1))))));
+    NodePtr tuple = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(0), lib.var(2)), lib.var(1)))));
+    lib.fixup(tuple);
     // λt. t (λx y. x)
-    Node* fst = interp->add_root(fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(1)))))));
+    NodePtr fst = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(1)))));
+    lib.fixup(fst);
     // λt. t (λx y. y)
-    Node* snd = interp->add_root(fixup_debruijn(lambda(apply(var(0), lambda(lambda(var(0)))))));
+    NodePtr snd = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(0)))));
+    lib.fixup(snd);
 
-    Node* arg = interp->add_root(prim());
-    Node* stream = interp->add_root(apply(fix, apply(tuple, arg)));
+    NodePtr arg = lib.prim();
+    lib.fixup(arg);
+    NodePtr stream = lib.apply(lib.fix(), lib.apply(tuple, arg));
+    lib.fixup(stream);
 
     try {
         for (int i = 0; i < 100; i++) {
-            Node* item = interp->reduce_whnf(apply(fst, stream));
+            NodePtr item = lib.apply(fst, stream);
+            lib.fixup(item);
+            item = interp.reduce_whnf(item);
             if (item != arg) {
                 std::cout << "FAIL\n";
                 std::cout << "i = " << i << "\n";
                 show_node(item);
                 return;
             }
-            stream = apply(snd, stream);
+            stream = lib.apply(snd, stream);
+            lib.fixup(stream);
         }
     }
     catch (std::runtime_error& e) {
@@ -233,16 +250,13 @@ void test_scott_stream(size_t heap_size) {
 
     std::cout << "PASS\n";
 }
-*/
 
 int main() {
     test_idf();
-/*
     test_loop();
     test_fix_idf();
     test_fix_const();
     test_scott_tuple();
     test_scott_stream(DEFAULT_HEAP_SIZE);
     test_scott_stream(2048);
-*/
 }

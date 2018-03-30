@@ -220,6 +220,10 @@ class NodePtr : GCRef {
         return _ptr == other._ptr;
     }
 
+    bool operator != (const NodePtr& other) {
+        return !(*this == other);
+    }
+
     Node* unsafe_get_ptr() const {
         return _ptr;
     }
@@ -327,10 +331,16 @@ class NodeMaker {
         return NodePtr(_interp, lambda);
     }
 
+    // NOTE WELL -- DAGness in debruijn graphs can be tricky if you allow terms
+    // to be open.  Don't do it.  E.g.
+    //   t = var(0);
+    //   x = apply(lambda(t), lambda(lambda(t)))
+    // will fail to convert correctly because the two var(0)s end up being at
+    // different depths.  Keep your shared terms closed, people.
     void fixup(const NodePtr& ptr);
     
   private:
-    void fixup_rec(Node* node, depth_t depth, std::set<Node*>& seen);
+    void fixup_rec(Node* node, depth_t depth);
     
     Interp* _interp;
 };

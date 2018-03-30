@@ -229,11 +229,8 @@ void test_scott_stream(size_t heap_size) {
 
     try {
         for (int i = 0; i < 100; i++) {{
-            interp.show_rootset();
-            std::cout << "ITEM:\n";
             NodePtr item = lib.apply(fst, stream);
             lib.fixup(item);
-            interp.show_rootset();
             item = interp.reduce_whnf(item);
             if (item != arg) {
                 std::cout << "FAIL\n";
@@ -261,5 +258,5 @@ int main() {
     test_fix_const();
     test_scott_tuple();
     test_scott_stream(DEFAULT_HEAP_SIZE);
-    test_scott_stream(4096);
+    test_scott_stream(4096);  // Should be enough heap to carry out the calculation with GCs but no resizing
 }

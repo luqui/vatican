@@ -1,8 +1,6 @@
 #ifndef __VATICAN_H__
 #define __VATICAN_H__
 
-#include <iostream>
-
 typedef int depth_t;
 typedef unsigned char byte;
 
@@ -200,7 +198,6 @@ class NodePtr : GCRef {
   public:
     ~NodePtr() {
         // Remove this node from the rootset
-        std::cout << "Removing " << _ptr << " from rootset\n";
         _prev->_next = _next;
         _next->_prev = _prev;
     }
@@ -219,11 +216,7 @@ class NodePtr : GCRef {
     }
 
     void visit(NodeVisitor* visitor) {
-        Node* old_ptr = _ptr;
         visitor->visit(_ptr);
-        if (old_ptr != _ptr) {
-            std::cout << "Ptr updated from " << old_ptr << " to " << _ptr << " (visit)\n";
-        }
     }
 
     bool operator == (const NodePtr& other) {
@@ -279,14 +272,6 @@ class Interp {
     // possibily with indirections followed.
     NodePtr reduce_whnf(const NodePtr& node);
 
-    void show_rootset() {
-        std::cout << "Rootset: ";
-        for (NodePtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
-            std::cout << i->_ptr << " ";
-        }
-        std::cout << "\n";
-    }
-
   private:
     Interp(const Interp&);  // No copying
 
@@ -305,7 +290,6 @@ class Interp {
     void* allocate_node(size_t size);
 
     void run_gc();
-    void corruption_check();
 
     int _fuel;
     Pool* _heap;

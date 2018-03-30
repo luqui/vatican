@@ -303,6 +303,43 @@ void test_heap_resize() {
     }
 }
 
+void test_cycle_preservation() {
+    std::cout << "test_cycle_preservation\n";
+    // This is a test that we need the memoization infrastructure for
+
+    Interp interp;
+    NodeMaker lib(&interp);
+    
+    // λx y c. c x y
+    NodePtr tuple = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(0), lib.var(2)), lib.var(1)))));
+    lib.fixup(tuple);
+    // λt. t (λx y. x)
+    NodePtr fst = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(1)))));
+    lib.fixup(fst);
+    // λt. t (λx y. y)
+    NodePtr snd = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(0)))));
+    lib.fixup(snd);
+
+    NodePtr arg = lib.prim();
+    lib.fixup(arg);
+    
+    NodePtr stream = lib.apply(lib.fix(), lib.apply(tuple, arg));
+    lib.fixup(stream);
+
+    NodePtr test = lib.apply(snd, test);
+    lib.fixup(test);
+    test = interp.reduce_whnf(test);
+    if (test == stream) {
+        std::cout << "PASS\n";
+    }
+    else {
+        std::cout << "FAIL\n";
+        show_node(test);
+        std::cout << "/=\n";
+        show_node(stream);
+    }
+}
+
 
 int main() {
     test_idf();
@@ -313,4 +350,5 @@ int main() {
     test_scott_stream(DEFAULT_HEAP_SIZE);
     test_scott_stream(4096);  // Should be enough heap to carry out the calculation with GCs but no resizing
     test_heap_resize();
+    test_cycle_preservation();
 }

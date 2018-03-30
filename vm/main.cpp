@@ -74,7 +74,6 @@ void test_idf() {
     NodePtr test = lib.apply(lib.lambda(lib.var(0)), arg);
     lib.fixup(test);
 
-    show_node(test);    
     test = interp.reduce_whnf(test);
     if (test == arg) {
         std::cout << "PASS\n";
@@ -94,8 +93,6 @@ void test_loop() {
     NodePtr w = lib.lambda(lib.apply(lib.var(0), lib.var(0)));
     NodePtr loop = lib.apply(w,w);
     lib.fixup(loop);
-
-    show_node(loop);
 
     try {
         loop = interp.reduce_whnf(loop);
@@ -121,7 +118,6 @@ void test_fix_idf() {
 
     NodePtr test = lib.apply(lib.fix(), lib.lambda(lib.var(0)));
     lib.fixup(test);
-    show_node(test);
     try {
         test = interp.reduce_whnf(test);
         std::cout << "FAIL\n";
@@ -146,7 +142,6 @@ void test_fix_const() {
     NodePtr arg = lib.prim();
     NodePtr test = lib.apply(lib.fix(), lib.lambda(arg));
     lib.fixup(test);
-    show_node(test);
     test = interp.reduce_whnf(test);
     if (test == arg) {
         std::cout << "PASS\n";

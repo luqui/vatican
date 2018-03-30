@@ -331,10 +331,12 @@ void NodeMaker::fixup_rec(Node* node, depth_t depth, std::set<Node*>& seen) {
     // If we hit this assert, it means that there is DAGness in a debruijn
     // graph, which is unsafe because sharing is not preserved in the transformation.
     // De-share the graph, or fixup earlier.
-    assert(seen.find(node) != seen.end());
+    assert(seen.find(node) == seen.end());
     seen.insert(node);
     
-    if (node->depth >= 0) return;  // Already converted
+    if (node->type == NODETYPE_VAR ? node->depth > 0 : node->depth >= 0) {
+        return;  // Already converted
+    }
 
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {

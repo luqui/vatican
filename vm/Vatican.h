@@ -220,13 +220,20 @@ class NodePtr : GCRef {
         return _ptr == other._ptr;
     }
 
+    Node* unsafe_get_ptr() const {
+        return _ptr;
+    }
+
   private:
     NodePtr()
         : _ptr(0)
-        , _next(0)
-        , _prev(0)
+        , _next(this)
+        , _prev(this)
     {
         // Special constructor for terminal nodes
+        // NOTE THE CYCLE!  We rely on comparison to the edges rather than
+        // comparison to null pointer.  This is to remove conditionals from
+        // the destructor.
     }
     
     NodePtr(class Interp* interp, Node* ptr);

@@ -4,9 +4,7 @@
 #include <set>
 #include "Vatican.h"
 
-void show_node_rec(const NodePtr& node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
-    std::cout << "NODEEEE\n";
-    /*
+void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
     if (seen.find(node) != seen.end()) {
         std::cout << "LOOP";
         return;
@@ -52,12 +50,17 @@ void show_node_rec(const NodePtr& node, bool lambda_parens, bool apply_parens, s
             assert(false);
         }
     }
-    */
+}
+
+void inspect(Node* node) {
+    std::set<Node*> seen;
+    show_node_rec(node, false, false, seen);
+    std::cout << "\n";
 }
 
 void show_node(const NodePtr& node) {
     std::set<Node*> seen;
-    show_node_rec(node, false, false, seen);
+    show_node_rec(node.unsafe_get_ptr(), false, false, seen);
     std::cout << "\n";
 }
 
@@ -67,7 +70,6 @@ void test_idf() {
     Interp interp;
     NodeMaker lib(&interp);
 
-    NodePtr idf = lib.lambda(lib.var(0));
     NodePtr arg = lib.prim();
     NodePtr test = lib.apply(lib.lambda(lib.var(0)), arg);
     lib.fixup(test);

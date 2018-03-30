@@ -29,7 +29,7 @@ void Pool::clear() {
     _cur = _pool_start;
 
     // We clear it for now to catch any bugs faster.
-    memset(_pool_start, 0, size());
+    memset(_pool_start, 0xbf, size());
 }
 
 
@@ -47,13 +47,62 @@ Node* squash_indirs(Node* node) {
     return end;
 }
 
+NodePtr::NodePtr(const NodePtr& const_p)
+{
+    NodePtr& p = const_cast<NodePtr&>(const_p);
+    this->_ptr = p._ptr;
+    
+    // Put this NodePtr just after p in the root set
+    this->_next = p._next;
+    p._next = this;
+    this->_prev = &p;
+}
+
+NodePtr::NodePtr(Interp* interp, Node* ptr)
+    : _ptr(ptr)
+{
+    // Put this NodePtr on the back of the rootset
+    _next = &interp->_rootset_back;
+    _prev = interp->_rootset_back._prev;
+    interp->_rootset_back._prev = this;
+}
+
+class time_to_gc_exception : public std::exception { };
+
 void Interp::init(size_t heap_size, int fuel) {
     _heap = new Pool(heap_size);
     _backup_heap = 0;
     _fuel = fuel;
+    _rootset_front._next = &_rootset_back;
+    _rootset_back._prev = &_rootset_front;
 }
 
-Node* Interp::reduce_whnf(Node* node) {
+NodePtr Interp::reduce_whnf(const NodePtr& node) {
+    // Negative depths are used for debruijn punning.  You forgot to fixup.
+    assert(node->depth >= 0);
+
+  REDO:
+    // We only run the GC at the top level, because otherwise the GC might move
+    // nodes that are on the C stack being reduced, and ain't nobody got time
+    // for that
+    try {
+        return NodePtr(this, reduce_whnf_wrapper(node._ptr));
+    }
+    catch (time_to_gc_exception& e) {
+        std::cout << "Ok GC time\n";
+        run_gc();
+        goto REDO;
+    }
+}
+
+Node* Interp::reduce_whnf_wrapper(Node* node) {
+    assert(!_backup_heap || !_backup_heap->contains(node));
+    Node* r = reduce_whnf_rec(node);
+    assert(!_backup_heap || !_backup_heap->contains(r));
+    return r;
+}
+
+Node* Interp::reduce_whnf_rec(Node* node) {
   REDO:
     if (_fuel > 0 && --_fuel == 0) {
         throw std::runtime_error("Out of fuel");
@@ -71,7 +120,7 @@ Node* Interp::reduce_whnf(Node* node) {
         }
         break; case NODETYPE_APPLY: {
             ApplyNode* apply = (ApplyNode*)node;
-            apply->f = reduce_whnf(apply->f);
+            apply->f = reduce_whnf_wrapper(apply->f);
             
             if (apply->f->type != NODETYPE_LAMBDA) {
                 apply->blocked = true;
@@ -94,7 +143,7 @@ Node* Interp::reduce_whnf(Node* node) {
         }
         break; case NODETYPE_SUBST: {
             SubstNode* subst = (SubstNode*)node;
-            subst->data.body = reduce_whnf(subst->data.body);
+            subst->data.body = reduce_whnf_wrapper(subst->data.body);
             Node* substed = substitute(subst->data.body, subst->data.var, subst->data.arg, subst->data.shift);
 
             // Make sure the transmogrification is safe.
@@ -198,10 +247,11 @@ void Interp::run_gc() {
 
     Node* top = 0;
     Node* cleanup = 0;
-    for (std::vector<Node*>::iterator i = _root_set.begin(); i != _root_set.end(); ++i) {
-        std::cout << "GC ----------- Adding " << *i << " (root)\n";
-        (*i)->gc_next = top;
-        top = *i;
+
+    // Visit root set
+    for (NodePtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
+        GCVisitor visitor(_backup_heap, &top);
+        i->visit(&visitor);
     }
 
     while (top) {
@@ -238,7 +288,7 @@ void Interp::run_gc() {
             cleanup = copied;
         }
     }
-
+    
     while (cleanup) {
         // Remove the node from the cleanup stack
         Node* node = cleanup;
@@ -250,6 +300,67 @@ void Interp::run_gc() {
         node->visit(&visitor);
         assert(!visitor.work_left);
     }
+    
+    // Clean up root set
+    for (NodePtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
+        GCVisitor visitor(_backup_heap, &top);
+        i->visit(&visitor);
+        assert(!visitor.work_left);
+    }
+
+    // For debug.
+    _backup_heap->clear();
 }
 
+void* Interp::allocate_node(size_t size) {
+    void* mem = _heap->allocate(size);
+    if (mem == 0) {
+        throw time_to_gc_exception();
+    }
+    else {
+        return mem;
+    }
+}
 
+void NodeMaker::fixup(const NodePtr& ptr) {
+    std::set<Node*> seen;
+    fixup_rec(ptr._ptr, 0, seen);
+}
+
+void NodeMaker::fixup_rec(Node* node, depth_t depth, std::set<Node*>& seen) {
+    // If we hit this assert, it means that there is DAGness in a debruijn
+    // graph, which is unsafe because sharing is not preserved in the transformation.
+    // De-share the graph, or fixup earlier.
+    assert(seen.find(node) != seen.end());
+    seen.insert(node);
+    
+    if (node->depth >= 0) return;  // Already converted
+
+    switch (node->type) {
+        break; case NODETYPE_LAMBDA: {
+            LambdaNode* lambda = (LambdaNode*)node;
+            fixup_rec(lambda->body, depth+1, seen);
+            if (lambda->body->depth == depth+1) {
+                lambda->depth = depth;
+            }
+            else {
+                // Is this correct?  That a lambda that doesn't use its
+                // argument has the depth of its body?
+                lambda->depth = lambda->body->depth;
+            }
+        }
+        break; case NODETYPE_APPLY: {
+            ApplyNode* apply = (ApplyNode*)node;
+            fixup_rec(apply->f, depth, seen);
+            fixup_rec(apply->x, depth, seen);
+            apply->depth = std::max(apply->f->depth, apply->x->depth);
+        }
+        break; case NODETYPE_VAR: {
+            if (node->depth <= 0) {
+                node->depth = depth + node->depth;  // Convert from deBruijn;
+            }
+        }
+        break; default: {
+        }
+    }
+}

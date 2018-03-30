@@ -1,66 +1,12 @@
+#include <cassert>
 #include <iostream>
 #include <string>
 #include <set>
 #include "Vatican.h"
 
-// To build nodes for testing, we pun and use var depth as a de bruijn
-// index, then postprocess it into the correct depth form.
-Node* lambda(Node* body) {
-    return new LambdaNode(0, body);
-}
-
-Node* apply(Node* f, Node* x) {
-    return new ApplyNode(0, f, x);
-}
-
-Node* var(int dbi) {
-    // We use negative to indicate a debruijn index, because if the graph has
-    // sharing it is possible to traverse nodes twice.  A variable's depth is
-    // always positive so there is no overlap at 0.
-    return new VarNode(-dbi);
-}
-
-Node* prim() {
-    return new PrimNode();
-}
-
-void fixup_debruijn_rec(Node* node, int depth) {
-    switch (node->type) {
-        break; case NODETYPE_LAMBDA: {
-            LambdaNode* lambda = (LambdaNode*)node;
-            fixup_debruijn_rec(lambda->body, depth+1);
-            if (lambda->body->depth == depth+1) {
-                lambda->depth = depth;
-            }
-            else {
-                // Is this correct?  That a lambda that doesn't use its
-                // argument has the depth of its body?
-                lambda->depth = lambda->body->depth;
-            }
-        }
-        break; case NODETYPE_APPLY: {
-            ApplyNode* apply = (ApplyNode*)node;
-            fixup_debruijn_rec(apply->f, depth);
-            fixup_debruijn_rec(apply->x, depth);
-            apply->depth = std::max(apply->f->depth, apply->x->depth);
-        }
-        break; case NODETYPE_VAR: {
-            if (node->depth <= 0) {
-                node->depth = depth + node->depth;  // Convert from deBruijn;
-            }
-        }
-        break; default: {
-        }
-    }
-};
-
-
-Node* fixup_debruijn(Node* node) {
-    fixup_debruijn_rec(node, 0);
-    return node;
-};
-
-void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
+void show_node_rec(const NodePtr& node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
+    std::cout << "NODEEEE\n";
+    /*
     if (seen.find(node) != seen.end()) {
         std::cout << "LOOP";
         return;
@@ -103,12 +49,13 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
             show_node_rec(indir->target, true, true, seen);
         }
         break; default: {
-            std::cout << "UNSUPPORTED";
+            assert(false);
         }
     }
+    */
 }
 
-void show_node(Node* node) {
+void show_node(const NodePtr& node) {
     std::set<Node*> seen;
     show_node_rec(node, false, false, seen);
     std::cout << "\n";
@@ -117,14 +64,16 @@ void show_node(Node* node) {
 void test_idf() {
     std::cout << "test_idf\n";
 
-    Interp* interp = new Interp;
+    Interp interp;
+    NodeMaker lib(&interp);
 
-    Node* idf = lambda(var(0));
-    Node* arg = interp->add_root(prim());
-    Node* test = interp->add_root(fixup_debruijn(apply(idf, arg)));
+    NodePtr idf = lib.lambda(lib.var(0));
+    NodePtr arg = lib.prim();
+    NodePtr test = lib.apply(lib.lambda(lib.var(0)), arg);
+    lib.fixup(test);
 
     show_node(test);    
-    test = interp->reduce_whnf(test);
+    test = interp.reduce_whnf(test);
     if (test == arg) {
         std::cout << "PASS\n";
     }
@@ -134,6 +83,7 @@ void test_idf() {
     }
 }
 
+/*
 void test_loop() {
     std::cout << "test_loop\n";
 
@@ -281,13 +231,16 @@ void test_scott_stream(size_t heap_size) {
 
     std::cout << "PASS\n";
 }
+*/
 
 int main() {
     test_idf();
+/*
     test_loop();
     test_fix_idf();
     test_fix_const();
     test_scott_tuple();
     test_scott_stream(DEFAULT_HEAP_SIZE);
     test_scott_stream(2048);
+*/
 }

@@ -1,7 +1,7 @@
 #ifndef __VATICAN_H__
 #define __VATICAN_H__
 
-#include <vector>
+#include <set>
 
 typedef int depth_t;
 typedef unsigned char byte;
@@ -22,7 +22,13 @@ public:
     virtual void visit(Node*&) = 0;
 };
 
-struct Node {
+class GCRef {
+public:
+    virtual ~GCRef() { }
+    virtual void visit(NodeVisitor* visitor) = 0;
+};
+
+struct Node : public GCRef {
     Node(NodeType type, bool blocked, depth_t depth) 
         : gc_next(0), depth(depth), blocked(blocked), type(type)
     { }
@@ -32,7 +38,6 @@ struct Node {
     bool blocked;
     NodeType type;
 
-    virtual void visit(NodeVisitor* visitor) = 0;
     virtual size_t size() = 0;
     virtual Node* copy(void* target) = 0;
 };
@@ -188,11 +193,58 @@ class Pool {
 };
 
 
+class NodePtr : GCRef {
+    friend class Interp;
+    friend class NodeMaker;
+  public:
+    ~NodePtr() {
+        // Remove this node from the rootset
+        _prev->_next = _next;
+        _next->_prev = _prev;
+    }
+
+    NodePtr(const NodePtr& const_p);
+
+    Node* operator -> () {
+        return _ptr;
+    }
+    const Node* operator -> () const {
+        return _ptr;
+    }
+
+    void visit(NodeVisitor* visitor) {
+        visitor->visit(_ptr);
+    }
+
+    bool operator == (const NodePtr& other) {
+        return _ptr == other._ptr;
+    }
+
+  private:
+    NodePtr()
+        : _ptr(0)
+        , _next(0)
+        , _prev(0)
+    {
+        // Special constructor for terminal nodes
+    }
+    
+    NodePtr(class Interp* interp, Node* ptr);
+
+    Node* _ptr;
+    NodePtr* _next;
+    NodePtr* _prev;
+};
+
+
 const size_t DEFAULT_HEAP_SIZE = 0x100000;  // 1MB
 
 class Interp {
+    friend class NodePtr;
+    friend class NodeMaker;
+
   public:
-    Interp() { 
+    Interp() {
         init(DEFAULT_HEAP_SIZE, 0); 
     }
 
@@ -204,17 +256,15 @@ class Interp {
 
     // Destructively reduce the node to whnf.  Returns the same node, 
     // possibily with indirections followed.
-    Node* reduce_whnf(Node* node);
-
-    Node* add_root(Node* node) {
-        _root_set.push_back(node);
-        return node;
-    }
+    NodePtr reduce_whnf(const NodePtr& node);
 
   private:
     Interp(const Interp&);  // No copying
 
     void init(size_t heap_size, int fuel);
+    
+    Node* reduce_whnf_wrapper(Node* node);
+    Node* reduce_whnf_rec(Node* node);
 
     Node* substitute(Node* body, depth_t var, Node* arg, depth_t shift);
 
@@ -223,22 +273,7 @@ class Interp {
         return allocate_node(sizeof(T));
     }
     
-    void* allocate_node(size_t size) {
-        void* mem = _heap->allocate(size);
-        if (mem == 0) {
-            run_gc();
-            void* mem2 = _heap->allocate(size);
-            if (mem2 == 0) {
-                throw std::runtime_error("Couldn't GC enough memory.");
-            }
-            else {  
-                return mem2;
-            }
-        }
-        else {
-            return mem;
-        }
-    }
+    void* allocate_node(size_t size);
 
     void run_gc();
 
@@ -246,7 +281,51 @@ class Interp {
     Pool* _heap;
     Pool* _backup_heap;
     
-    std::vector<Node*> _root_set;
+    NodePtr _rootset_front;
+    NodePtr _rootset_back;
+};
+
+
+class NodeMaker {
+  public:
+    NodeMaker(Interp* interp) : _interp(interp) { }
+
+    // To build nodes for testing, we pun and use var depth as a de bruijn
+    // index, then postprocess it into the correct depth form.
+    NodePtr lambda(const NodePtr& body) {
+        return NodePtr(_interp,
+            new (_interp->allocate_node<LambdaNode>()) LambdaNode(-1, body._ptr));
+    }
+    NodePtr apply(const NodePtr& f, const NodePtr& x) {
+        return NodePtr(_interp,
+            new (_interp->allocate_node<ApplyNode>()) ApplyNode(-1, f._ptr, x._ptr));
+    }
+    NodePtr var(int debruijn) {
+        // We use negative to indicate a debruijn index, because if the graph has
+        // sharing it is possible to traverse nodes twice.  A variable's depth is
+        // always strictly positive so there is no overlap at 0.
+        return NodePtr(_interp,
+            new (_interp->allocate_node<VarNode>()) VarNode(-debruijn));
+    }
+
+    NodePtr prim() {
+        return NodePtr(_interp, new (_interp->allocate_node<PrimNode>()) PrimNode());
+    }
+
+    NodePtr fix() {
+        Node* var = new (_interp->allocate_node<VarNode>()) VarNode(1);
+        ApplyNode* body = new (_interp->allocate_node<ApplyNode>()) ApplyNode(1, var, 0);
+        body->x = body;
+        Node* lambda = new (_interp->allocate_node<LambdaNode>()) LambdaNode(0, body);
+        return NodePtr(_interp, lambda);
+    }
+
+    void fixup(const NodePtr& ptr);
+    
+  private:
+    void fixup_rec(Node* node, depth_t depth, std::set<Node*>& seen);
+    
+    Interp* _interp;
 };
 
 #endif

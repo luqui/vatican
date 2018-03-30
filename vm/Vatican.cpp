@@ -56,12 +56,13 @@ Node* squash_indirs(Node* node) {
     return end;
 }
 
-NodePtr::NodePtr(const NodePtr& const_p)
+NodePtr& NodePtr::operator= (const NodePtr& const_p)
 {
     NodePtr& p = const_cast<NodePtr&>(const_p);
+    std::cout << "Ptr updated from " << this->_ptr << " to " << p._ptr << " (copy)\n";
     this->_ptr = p._ptr;
 
-    
+    std::cout << "Adding " << _ptr << " to rootset (copy)\n";
     // Put this NodePtr just after p in the root set
     // [p] -> this -> [p.next]
     //     <-      <-  
@@ -69,14 +70,18 @@ NodePtr::NodePtr(const NodePtr& const_p)
     this->_prev = &p;
     p._next->_prev = this;
     p._next = this;
+    return *this;
 }
 
 NodePtr::NodePtr(Interp* interp, Node* ptr)
     : _ptr(ptr)
 {
+    std::cout << "Adding " << _ptr << " to rootset (init)\n";
+    std::cout << "  back-prev == " << interp->_rootset_back._prev->_ptr << "\n";
     // Put this NodePtr on the back of the rootset
     _next = &interp->_rootset_back;
     _prev = interp->_rootset_back._prev;
+    std::cout << "  " << interp->_rootset_back._prev->_ptr << "->_next = " << _ptr << "\n";
     interp->_rootset_back._prev->_next = this;
     interp->_rootset_back._prev = this;
 }
@@ -276,6 +281,7 @@ void Interp::run_gc() {
 
     // Visit root set
     for (NodePtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
+        std::cout << "Visiting root " << i->_ptr << "\n";
         GCVisitor visitor(_backup_heap, &top);
         i->visit(&visitor);
     }
@@ -336,6 +342,7 @@ void Interp::run_gc() {
     
     // Clean up root set
     for (NodePtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
+        std::cout << "Cleaning root " << i->_ptr << "\n";
         GCVisitor visitor(_backup_heap, &top);
         i->visit(&visitor);
         assert(!visitor.work_left);

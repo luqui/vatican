@@ -326,7 +326,7 @@ void test_cycle_preservation() {
     NodePtr stream = lib.apply(lib.fix(), lib.apply(tuple, arg));
     lib.fixup(stream);
 
-    NodePtr test = lib.apply(snd, test);
+    NodePtr test = lib.apply(snd, stream);
     lib.fixup(test);
     test = interp.reduce_whnf(test);
     if (test == stream) {
@@ -334,9 +334,9 @@ void test_cycle_preservation() {
     }
     else {
         std::cout << "FAIL\n";
-        show_node(test);
-        std::cout << "/=\n";
         show_node(stream);
+        std::cout << "/=\n";
+        show_node(test);
     }
 }
 

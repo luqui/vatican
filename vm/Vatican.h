@@ -223,11 +223,11 @@ class NodePtr : GCRef {
         visitor->visit(_ptr);
     }
 
-    bool operator == (const NodePtr& other) {
-        return _ptr == other._ptr;
+    bool operator == (const NodePtr& other) const {
+        return follow_indirs() == other.follow_indirs();
     }
 
-    bool operator != (const NodePtr& other) {
+    bool operator != (const NodePtr& other) const {
         return !(*this == other);
     }
 
@@ -247,6 +247,14 @@ class NodePtr : GCRef {
         // NOTE THE CYCLE!  We rely on comparison to the edges rather than
         // comparison to null pointer.  This is to remove conditionals from
         // the destructor.
+    }
+
+    Node* follow_indirs() const {
+        Node* r = _ptr;
+        if (r->type == NODETYPE_INDIR) {
+            r = ((IndirNode*)r)->target;
+        }
+        return r;
     }
 
     Node* _ptr;

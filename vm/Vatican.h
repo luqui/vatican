@@ -185,6 +185,10 @@ class Pool {
     size_t size() const {
         return _pool_end - _pool_start;
     }
+
+    size_t allocated() const {
+        return _cur - _pool_start;
+    }
   private:
     byte* _pool_start;
     byte* _cur;
@@ -271,6 +275,10 @@ class Interp {
     // Destructively reduce the node to whnf.  Returns the same node, 
     // possibily with indirections followed.
     NodePtr reduce_whnf(const NodePtr& node);
+
+    size_t heap_size() const {
+        return _heap->size();
+    }
 
   private:
     Interp(const Interp&);  // No copying

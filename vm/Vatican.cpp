@@ -320,6 +320,12 @@ void Interp::run_gc() {
         assert(!visitor.work_left);
     }
 
+    // If we reclaimed less than half of the heap, grow the target heap for next time.
+    size_t heapsize = _backup_heap->size();
+    if (2 * _heap->allocated() > heapsize) {
+        delete _backup_heap;
+        _backup_heap = new Pool(2*heapsize);
+    }
     _backup_heap->clear();
 }
 

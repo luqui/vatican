@@ -254,7 +254,9 @@ void test_scott_stream(size_t heap_size) {
 void test_heap_resize() {
     std::cout << "test_heap_resize\n";
 
-    Interp interp(4096, 0);
+    const size_t heap_size = 4096;
+
+    Interp interp(heap_size, 0);
     NodeMaker lib(&interp);
 
     NodePtr idf = lib.lambda(lib.var(0));
@@ -296,8 +298,8 @@ void test_heap_resize() {
     NodePtr test = lib.apply(lib.apply(thousand, idf), lib.apply(lib.apply(thousand, idf), arg));
     lib.fixup(test);
 
-    interp.reduce_whnf(test);
-    if (test == arg) {
+    test = interp.reduce_whnf(test);
+    if (test == arg && interp.heap_size() > heap_size) {  // if the heap didn't grow, we need to alter the test
         std::cout << "PASS\n";
     }
     else {

@@ -14,6 +14,7 @@ enum NodeType
     , NODETYPE_VAR
     , NODETYPE_INDIR
     , NODETYPE_PRIM
+    , NODETYPE_MAX
     };
 
 class NodeVisitor {
@@ -287,6 +288,7 @@ class Interp {
     void* allocate_node(size_t size);
 
     void run_gc();
+    void corruption_check();
 
     int _fuel;
     Pool* _heap;

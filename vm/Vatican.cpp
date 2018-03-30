@@ -2,6 +2,8 @@
 #include <new>
 #include <stdexcept>
 #include <iostream>
+#include <deque>
+#include <set>
 
 #include "Vatican.h"
 
@@ -14,9 +16,16 @@ Pool::~Pool() {
     delete _pool_start;
 }
 
+void check_cleared(void* start, size_t size) {
+    for (int i = 0; i < size; i++) {
+        assert(*(((byte*)start) + i) == 0xbf);
+    }
+}
+
 void* Pool::allocate(size_t size) {
-    if (_cur + size < _pool_end) {
+    if (_cur + size < _pool_end) {  // XXX should be <= right?
         void* ret = (void*)_cur;
+        check_cleared(ret, size);
         _cur += size;
         return ret;
     }
@@ -76,7 +85,9 @@ class time_to_gc_exception : public std::exception { };
 
 void Interp::init(size_t heap_size, int fuel) {
     _heap = new Pool(heap_size);
-    _backup_heap = 0;
+    _backup_heap = new Pool(heap_size);
+    _heap->clear();
+    _backup_heap->clear();
     _fuel = fuel;
     _rootset_front._next = &_rootset_back;
     _rootset_back._prev = &_rootset_front;
@@ -94,7 +105,7 @@ NodePtr Interp::reduce_whnf(const NodePtr& node) {
         return NodePtr(this, reduce_whnf_wrapper(node._ptr));
     }
     catch (time_to_gc_exception& e) {
-        std::cout << "Ok GC time\n";
+        //std::cout << "Ok GC time\n";
         try {
             run_gc();
         }
@@ -107,8 +118,10 @@ NodePtr Interp::reduce_whnf(const NodePtr& node) {
 
 Node* Interp::reduce_whnf_wrapper(Node* node) {
     assert(!_backup_heap || !_backup_heap->contains(node));
+    assert(node->type < NODETYPE_MAX);
     Node* r = reduce_whnf_rec(node);
     assert(!_backup_heap || !_backup_heap->contains(r));
+    assert(node->type < NODETYPE_MAX);
     return r;
 }
 
@@ -229,10 +242,11 @@ public:
     { }
 
     void visit(Node*& node) {
+        assert(0 <= node->type && node->type < NODETYPE_MAX); // check for corruption
         node = squash_indirs(node);
         if (_old_pool->contains(node)) {
             if (node->gc_next == 0) {
-                std::cout << "GC ----------- Adding " << node << "\n";
+                //std::cout << "GC ----------- Adding " << node << "\n";
                 node->gc_next = *_gc_stack;
                 *_gc_stack = node;
             }
@@ -248,6 +262,8 @@ private:
 };
 
 void Interp::run_gc() {
+    corruption_check();
+
     std::cout << "RUNNING GC\n";
     if (_backup_heap == 0) {
         _backup_heap = new Pool(_heap->size());    
@@ -271,23 +287,26 @@ void Interp::run_gc() {
         node->gc_next = (Node*)(-1);  // We won't traverse again, but we use this as
                                       // a "seen" marker.  Cleared when copied.
 
-        std::cout << "GC ----------- Visiting " << node << "\n";
-
+        // Add children to gc stack (and update indirections if already moved)
+        GCVisitor visitor(_backup_heap, &top);
+        node->visit(&visitor);
+        
         // Copy node to new pool (if it was in the old pool, so we don't copy 
         // externally allocated things).
         Node* copied;
         if (_backup_heap->contains(node)) {
             copied = node->copy(allocate_node(node->size()));
             copied->gc_next = 0;
+            //std::cout << "GC ----------- Copying " << node << " to " << copied << "\n";
+
         }
         else {
+            //std::cout << "GC ----------- No Copy " << node << "\n";
             copied = node;
         }
-
-        // Add children to gc stack (and update indirections if already moved)
-        GCVisitor visitor(_backup_heap, &top);
-        node->visit(&visitor);
         
+        // XXX will not correctly copy direct self-reference
+
         // Make the old node an indirection to the new one (if it was copied)
         if (node != copied) {
             assert(node->size() >= sizeof(IndirNode));
@@ -296,6 +315,7 @@ void Interp::run_gc() {
 
         // Add the node to the cleanup stack if it had uncopied children.
         if (visitor.work_left) {
+            //std::cout << "GC ----------- Adding " << copied << " for cleanup\n";
             copied->gc_next = cleanup;
             cleanup = copied;
         }
@@ -307,6 +327,7 @@ void Interp::run_gc() {
         cleanup = node->gc_next;
         node->gc_next = 0;
 
+        //std::cout << "GC ----------- Cleaning up " << node << "\n";
         // Update indirections.  Everything should be copied at this point.
         GCVisitor visitor(_backup_heap, &top);
         node->visit(&visitor);
@@ -321,7 +342,9 @@ void Interp::run_gc() {
     }
 
     // For debug.
+    corruption_check();
     _backup_heap->clear();
+    corruption_check();
 }
 
 void* Interp::allocate_node(size_t size) {
@@ -333,6 +356,46 @@ void* Interp::allocate_node(size_t size) {
         return mem;
     }
 }
+
+
+class CorruptionCheckVisitor : public NodeVisitor
+{
+public:
+    CorruptionCheckVisitor(std::deque<Node*>* queue, std::set<Node*>* seen, Pool* old_heap)
+        : _queue(queue), _seen(seen), _old_heap(old_heap)
+    { }
+
+    void visit(Node*& node) {
+        assert(!_old_heap->contains(node));
+        assert(0 <= node->type && node->type < NODETYPE_MAX);
+        if (_seen->find(node) == _seen->end()) {
+            _seen->insert(node);
+            _queue->push_back(node);
+        }
+    }
+private:
+    std::deque<Node*>* _queue;
+    std::set<Node*>* _seen;
+    Pool* _old_heap;
+};
+
+void Interp::corruption_check() {
+    std::deque<Node*> queue;
+    std::set<Node*> seen;
+    
+    CorruptionCheckVisitor visitor(&queue, &seen, _backup_heap);
+
+    for (NodePtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
+        i->visit(&visitor);
+    }
+
+    while (!queue.empty()) {
+        Node* item = queue.front();
+        queue.pop_front();
+        item->visit(&visitor);
+    }
+}
+
 
 void NodeMaker::fixup(const NodePtr& ptr) {
     fixup_rec(ptr._ptr, 0);

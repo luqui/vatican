@@ -51,11 +51,15 @@ NodePtr::NodePtr(const NodePtr& const_p)
 {
     NodePtr& p = const_cast<NodePtr&>(const_p);
     this->_ptr = p._ptr;
+
     
     // Put this NodePtr just after p in the root set
+    // [p] -> this -> [p.next]
+    //     <-      <-  
     this->_next = p._next;
-    p._next = this;
     this->_prev = &p;
+    p._next->_prev = this;
+    p._next = this;
 }
 
 NodePtr::NodePtr(Interp* interp, Node* ptr)
@@ -64,6 +68,7 @@ NodePtr::NodePtr(Interp* interp, Node* ptr)
     // Put this NodePtr on the back of the rootset
     _next = &interp->_rootset_back;
     _prev = interp->_rootset_back._prev;
+    interp->_rootset_back._prev->_next = this;
     interp->_rootset_back._prev = this;
 }
 

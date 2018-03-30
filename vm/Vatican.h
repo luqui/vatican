@@ -206,9 +206,7 @@ class NodePtr : GCRef {
         _next->_prev = _prev;
     }
 
-    NodePtr(const NodePtr& p) {
-        *this = p;
-    }
+    NodePtr(const NodePtr& p);
     
     NodePtr& operator= (const NodePtr& const_p);
 

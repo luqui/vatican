@@ -48,10 +48,8 @@ Node* squash_indirs(Node* node) {
     return end;
 }
 
-NodePtr& NodePtr::operator= (const NodePtr& const_p)
-{
+NodePtr::NodePtr(const NodePtr& const_p) {
     NodePtr& p = const_cast<NodePtr&>(const_p);
-    this->_ptr = p._ptr;
 
     // Put this NodePtr just after p in the root set
     // [p] -> this -> [p.next]
@@ -60,6 +58,14 @@ NodePtr& NodePtr::operator= (const NodePtr& const_p)
     this->_prev = &p;
     p._next->_prev = this;
     p._next = this;
+
+    *this = const_p;
+}
+
+
+NodePtr& NodePtr::operator= (const NodePtr& p)
+{
+    this->_ptr = p._ptr;
     return *this;
 }
 
@@ -100,7 +106,7 @@ NodePtr Interp::reduce_whnf(const NodePtr& node) {
             run_gc();
         }
         catch (time_to_gc_exception& e) {
-            throw std::runtime_error("GC during GC.  Need to implement realloc logic.");
+            throw std::runtime_error("GC during GC, wat?");
         }
         goto REDO;
     }
@@ -270,7 +276,7 @@ void Interp::run_gc() {
         top = node->gc_next;
         node->gc_next = (Node*)(-1);  // We won't traverse again, but we use this as
                                       // a "seen" marker.  Cleared when copied.
-
+        
         // Add children to gc stack (and update indirections if already moved)
         GCVisitor visitor(_backup_heap, &top);
         node->visit(&visitor);

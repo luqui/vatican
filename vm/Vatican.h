@@ -236,6 +236,8 @@ class NodePtr : GCRef {
     }
 
   private:
+    NodePtr(class Interp* interp, Node* ptr);
+
     NodePtr()
         : _ptr(0)
         , _next(this)
@@ -246,8 +248,6 @@ class NodePtr : GCRef {
         // comparison to null pointer.  This is to remove conditionals from
         // the destructor.
     }
-    
-    NodePtr(class Interp* interp, Node* ptr);
 
     Node* _ptr;
     NodePtr* _next;
@@ -279,6 +279,8 @@ class Interp {
     size_t heap_size() const {
         return _heap->size();
     }
+    
+    void run_gc();
 
   private:
     Interp(const Interp&);  // No copying
@@ -296,8 +298,6 @@ class Interp {
     }
     
     void* allocate_node(size_t size);
-
-    void run_gc();
 
     int _fuel;
     Pool* _heap;

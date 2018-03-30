@@ -286,8 +286,6 @@ void Interp::run_gc() {
             copied = node;
         }
         
-        // XXX will not correctly copy direct self-reference
-
         // Make the old node an indirection to the new one (if it was copied)
         if (node != copied) {
             assert(node->size() >= sizeof(IndirNode));

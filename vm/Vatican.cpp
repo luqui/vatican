@@ -95,7 +95,12 @@ NodePtr Interp::reduce_whnf(const NodePtr& node) {
     }
     catch (time_to_gc_exception& e) {
         std::cout << "Ok GC time\n";
-        run_gc();
+        try {
+            run_gc();
+        }
+        catch (time_to_gc_exception& e) {
+            throw std::runtime_error("GC during GC.  Need to implement realloc logic.");
+        }
         goto REDO;
     }
 }
@@ -263,7 +268,8 @@ void Interp::run_gc() {
         // Remove the node from the gc stack
         Node* node = top;
         top = node->gc_next;
-        node->gc_next = 0;
+        node->gc_next = (Node*)(-1);  // We won't traverse again, but we use this as
+                                      // a "seen" marker.  Cleared when copied.
 
         std::cout << "GC ----------- Visiting " << node << "\n";
 
@@ -272,6 +278,7 @@ void Interp::run_gc() {
         Node* copied;
         if (_backup_heap->contains(node)) {
             copied = node->copy(allocate_node(node->size()));
+            copied->gc_next = 0;
         }
         else {
             copied = node;

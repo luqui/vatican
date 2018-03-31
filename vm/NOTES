@@ -27,3 +27,10 @@ For memo table GC, we need some external data structure (C++ has a multimap),
 storing "if X is alive, then it should go in (copied) memo tables M1,M2,..." .
 I think that is enough, since when you copy the memo table you immediately copy
 all the live keys, and then set up hooks for the not-yet discovered keys.  
+
+
+Side note (looking at the heap resize test) it might be nice to allow a
+construct to "de-share" something, to manually repeat work in the case that
+sharing would take too much memory (which might also make it unique). Or do
+something really cool like trying to detect whether to share using some
+time/space trade-off / conal's "unevaluation".

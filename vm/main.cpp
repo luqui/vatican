@@ -348,7 +348,7 @@ int main() {
     test_fix_const();
     test_scott_tuple();
     test_scott_stream(DEFAULT_HEAP_SIZE);
-    test_scott_stream(4096);  // Should be enough heap to carry out the calculation with GCs but no resizing
+    test_scott_stream(8192);  // Should be enough heap to carry out the calculation with GCs but no resizing
     test_heap_resize();
     test_cycle_preservation();
 }

@@ -180,7 +180,6 @@ Node* Interp::reduce_whnf_rec(Node* node) {
     }
 }
 
-
 Node* Interp::substitute(Node* body, depth_t var, Node* arg, depth_t shift) {
     body = squash_indirs(body);
 
@@ -205,19 +204,26 @@ Node* Interp::substitute(Node* body, depth_t var, Node* arg, depth_t shift) {
         break; case NODETYPE_LAMBDA: {
             LambdaNode* lambda = (LambdaNode*)body;
             
-            SubstNode* substbody = new (allocate_node<SubstNode>()) SubstNode(
-                newdepth+1, lambda->body, var, arg, shift);
+            Node* substbody = var <= lambda->body->depth
+                            ? new (allocate_node<SubstNode>()) SubstNode(
+                                   newdepth+1, lambda->body, var, arg, shift)
+                            : lambda->body;
 
             return new (allocate_node<LambdaNode>()) LambdaNode(newdepth, substbody);
         }
         break; case NODETYPE_APPLY: {
             ApplyNode* apply = (ApplyNode*)body;
         
-            SubstNode* newf = new (allocate_node<SubstNode>()) SubstNode(
-                newdepth, apply->f, var, arg, shift);
+            Node* newf = var <= apply->f->depth
+                       ? new (allocate_node<SubstNode>()) SubstNode(
+                             newdepth, apply->f, var, arg, shift)
+                       : apply->f;
 
-            SubstNode* newx = new (allocate_node<SubstNode>()) SubstNode(
-                newdepth, apply->x, var, arg, shift);
+
+            Node* newx = var <= apply->x->depth
+                       ? new (allocate_node<SubstNode>()) SubstNode(
+                             newdepth, apply->x, var, arg, shift)
+                       : apply->x;
 
             return new (allocate_node<ApplyNode>()) ApplyNode(
                 newdepth, newf, newx);

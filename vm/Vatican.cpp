@@ -48,10 +48,10 @@ Node* squash_indirs(Node* node) {
     return end;
 }
 
-NodePtr::NodePtr(const NodePtr& const_p) {
-    NodePtr& p = const_cast<NodePtr&>(const_p);
+RootPtr::RootPtr(const RootPtr& const_p) {
+    RootPtr& p = const_cast<RootPtr&>(const_p);
 
-    // Put this NodePtr just after p in the root set
+    // Put this RootPtr just after p in the root set
     // [p] -> this -> [p.next]
     //     <-      <-  
     this->_next = p._next;
@@ -63,16 +63,16 @@ NodePtr::NodePtr(const NodePtr& const_p) {
 }
 
 
-NodePtr& NodePtr::operator= (const NodePtr& p)
+RootPtr& RootPtr::operator= (const RootPtr& p)
 {
     this->_ptr = p._ptr;
     return *this;
 }
 
-NodePtr::NodePtr(Interp* interp, Node* ptr)
+RootPtr::RootPtr(Interp* interp, Node* ptr)
     : _ptr(ptr)
 {
-    // Put this NodePtr on the back of the rootset
+    // Put this RootPtr on the back of the rootset
     _next = &interp->_rootset_back;
     _prev = interp->_rootset_back._prev;
     interp->_rootset_back._prev->_next = this;
@@ -90,7 +90,7 @@ void Interp::init(size_t heap_size, int fuel) {
     _rootset_back._prev = &_rootset_front;
 }
 
-NodePtr Interp::reduce_whnf(const NodePtr& node) {
+RootPtr Interp::reduce_whnf(const RootPtr& node) {
     // Negative depths are used for debruijn punning.  You forgot to fixup.
     assert(node->depth >= 0);
 
@@ -99,7 +99,7 @@ NodePtr Interp::reduce_whnf(const NodePtr& node) {
     // nodes that are on the C stack being reduced, and ain't nobody got time
     // for that
     try {
-        return NodePtr(this, reduce_whnf_wrapper(node._ptr));
+        return RootPtr(this, reduce_whnf_wrapper(node._ptr));
     }
     catch (time_to_gc_exception& e) {
         try {
@@ -265,7 +265,7 @@ void Interp::run_gc() {
     Node* cleanup = 0;
 
     // Visit root set
-    for (NodePtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
+    for (RootPtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
         GCVisitor visitor(_backup_heap, &top);
         i->visit(&visitor);
     }
@@ -318,7 +318,7 @@ void Interp::run_gc() {
     }
     
     // Clean up root set
-    for (NodePtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
+    for (RootPtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
         GCVisitor visitor(_backup_heap, &top);
         i->visit(&visitor);
         assert(!visitor.work_left);
@@ -344,7 +344,7 @@ void* Interp::allocate_node(size_t size) {
 }
 
 
-void NodeMaker::fixup(const NodePtr& ptr) {
+void NodeMaker::fixup(const RootPtr& ptr) {
     fixup_rec(ptr._ptr, 0);
 }
 

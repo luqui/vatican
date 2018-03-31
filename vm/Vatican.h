@@ -196,19 +196,19 @@ class Heap {
 };
 
 
-class NodePtr : GCRef {
+class RootPtr : GCRef {
     friend class Interp;
     friend class NodeMaker;
   public:
-    ~NodePtr() {
+    ~RootPtr() {
         // Remove this node from the rootset
         _prev->_next = _next;
         _next->_prev = _prev;
     }
 
-    NodePtr(const NodePtr& p);
+    RootPtr(const RootPtr& p);
     
-    NodePtr& operator= (const NodePtr& const_p);
+    RootPtr& operator= (const RootPtr& const_p);
 
     Node* operator -> () {
         return _ptr;
@@ -221,11 +221,11 @@ class NodePtr : GCRef {
         visitor->visit(_ptr);
     }
 
-    bool operator == (const NodePtr& other) const {
+    bool operator == (const RootPtr& other) const {
         return follow_indirs() == other.follow_indirs();
     }
 
-    bool operator != (const NodePtr& other) const {
+    bool operator != (const RootPtr& other) const {
         return !(*this == other);
     }
 
@@ -234,9 +234,9 @@ class NodePtr : GCRef {
     }
 
   private:
-    NodePtr(class Interp* interp, Node* ptr);
+    RootPtr(class Interp* interp, Node* ptr);
 
-    NodePtr()
+    RootPtr()
         : _ptr(0)
         , _next(this)
         , _prev(this)
@@ -256,15 +256,15 @@ class NodePtr : GCRef {
     }
 
     Node* _ptr;
-    NodePtr* _next;
-    NodePtr* _prev;
+    RootPtr* _next;
+    RootPtr* _prev;
 };
 
 
 const size_t DEFAULT_HEAP_SIZE = 0x100000;  // 1MB
 
 class Interp {
-    friend class NodePtr;
+    friend class RootPtr;
     friend class NodeMaker;
 
   public:
@@ -280,7 +280,7 @@ class Interp {
 
     // Destructively reduce the node to whnf.  Returns the same node, 
     // possibily with indirections followed.
-    NodePtr reduce_whnf(const NodePtr& node);
+    RootPtr reduce_whnf(const RootPtr& node);
 
     size_t heap_size() const {
         return _heap->size();
@@ -309,8 +309,8 @@ class Interp {
     Heap* _heap;
     Heap* _backup_heap;
     
-    NodePtr _rootset_front;
-    NodePtr _rootset_back;
+    RootPtr _rootset_front;
+    RootPtr _rootset_back;
 };
 
 
@@ -320,32 +320,32 @@ class NodeMaker {
 
     // To build nodes for testing, we pun and use var depth as a de bruijn
     // index, then postprocess it into the correct depth form.
-    NodePtr lambda(const NodePtr& body) {
-        return NodePtr(_interp,
+    RootPtr lambda(const RootPtr& body) {
+        return RootPtr(_interp,
             new (_interp->allocate_node<LambdaNode>()) LambdaNode(-1, body._ptr));
     }
-    NodePtr apply(const NodePtr& f, const NodePtr& x) {
-        return NodePtr(_interp,
+    RootPtr apply(const RootPtr& f, const RootPtr& x) {
+        return RootPtr(_interp,
             new (_interp->allocate_node<ApplyNode>()) ApplyNode(-1, f._ptr, x._ptr));
     }
-    NodePtr var(int debruijn) {
+    RootPtr var(int debruijn) {
         // We use negative to indicate a debruijn index, because if the graph has
         // sharing it is possible to traverse nodes twice.  A variable's depth is
         // always strictly positive so there is no overlap at 0.
-        return NodePtr(_interp,
+        return RootPtr(_interp,
             new (_interp->allocate_node<VarNode>()) VarNode(-debruijn));
     }
 
-    NodePtr prim() {
-        return NodePtr(_interp, new (_interp->allocate_node<PrimNode>()) PrimNode());
+    RootPtr prim() {
+        return RootPtr(_interp, new (_interp->allocate_node<PrimNode>()) PrimNode());
     }
 
-    NodePtr fix() {
+    RootPtr fix() {
         Node* var = new (_interp->allocate_node<VarNode>()) VarNode(1);
         ApplyNode* body = new (_interp->allocate_node<ApplyNode>()) ApplyNode(1, var, 0);
         body->x = body;
         Node* lambda = new (_interp->allocate_node<LambdaNode>()) LambdaNode(0, body);
-        return NodePtr(_interp, lambda);
+        return RootPtr(_interp, lambda);
     }
 
     // NOTE WELL -- DAGness in debruijn graphs can be tricky if you allow terms
@@ -354,7 +354,7 @@ class NodeMaker {
     //   x = apply(lambda(t), lambda(lambda(t)))
     // will fail to convert correctly because the two var(0)s end up being at
     // different depths.  Keep your shared terms closed, people.
-    void fixup(const NodePtr& ptr);
+    void fixup(const RootPtr& ptr);
     
   private:
     void fixup_rec(Node* node, depth_t depth);

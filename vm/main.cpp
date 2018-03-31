@@ -58,7 +58,7 @@ void inspect(Node* node) {
     std::cout << "\n";
 }
 
-void show_node(const NodePtr& node) {
+void show_node(const RootPtr& node) {
     std::set<Node*> seen;
     show_node_rec(node.unsafe_get_ptr(), false, false, seen);
     std::cout << "\n";
@@ -70,8 +70,8 @@ void test_idf() {
     Interp interp;
     NodeMaker lib(&interp);
 
-    NodePtr arg = lib.prim();
-    NodePtr test = lib.apply(lib.lambda(lib.var(0)), arg);
+    RootPtr arg = lib.prim();
+    RootPtr test = lib.apply(lib.lambda(lib.var(0)), arg);
     lib.fixup(test);
 
     test = interp.reduce_whnf(test);
@@ -90,8 +90,8 @@ void test_loop() {
     Interp interp(DEFAULT_HEAP_SIZE, 1000);
     NodeMaker lib(&interp);
 
-    NodePtr w = lib.lambda(lib.apply(lib.var(0), lib.var(0)));
-    NodePtr loop = lib.apply(w,w);
+    RootPtr w = lib.lambda(lib.apply(lib.var(0), lib.var(0)));
+    RootPtr loop = lib.apply(w,w);
     lib.fixup(loop);
 
     try {
@@ -116,7 +116,7 @@ void test_fix_idf() {
     Interp interp(DEFAULT_HEAP_SIZE, 1000);
     NodeMaker lib(&interp);
 
-    NodePtr test = lib.apply(lib.fix(), lib.lambda(lib.var(0)));
+    RootPtr test = lib.apply(lib.fix(), lib.lambda(lib.var(0)));
     lib.fixup(test);
     try {
         test = interp.reduce_whnf(test);
@@ -139,8 +139,8 @@ void test_fix_const() {
     Interp interp;
     NodeMaker lib(&interp);
 
-    NodePtr arg = lib.prim();
-    NodePtr test = lib.apply(lib.fix(), lib.lambda(arg));
+    RootPtr arg = lib.prim();
+    RootPtr test = lib.apply(lib.fix(), lib.lambda(arg));
     lib.fixup(test);
     test = interp.reduce_whnf(test);
     if (test == arg) {
@@ -160,27 +160,27 @@ void test_scott_tuple() {
     NodeMaker lib(&interp);
 
     // λx y c. c x y
-    NodePtr tuple = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(0), lib.var(2)), lib.var(1)))));
+    RootPtr tuple = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(0), lib.var(2)), lib.var(1)))));
     lib.fixup(tuple);
     // λt. t (λx y. x)
-    NodePtr fst = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(1)))));
+    RootPtr fst = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(1)))));
     lib.fixup(fst);
     // λt. t (λx y. y)
-    NodePtr snd = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(0)))));
+    RootPtr snd = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(0)))));
     lib.fixup(snd);
 
-    NodePtr primx = lib.prim();
+    RootPtr primx = lib.prim();
     lib.fixup(primx);
-    NodePtr primy = lib.prim();
+    RootPtr primy = lib.prim();
     lib.fixup(primy);
 
-    NodePtr tup = lib.apply(lib.apply(tuple, primx), primy);
+    RootPtr tup = lib.apply(lib.apply(tuple, primx), primy);
     lib.fixup(tup);
 
-    NodePtr testx = lib.apply(fst, tup);
+    RootPtr testx = lib.apply(fst, tup);
     lib.fixup(testx);
 
-    NodePtr resultx = interp.reduce_whnf(testx);
+    RootPtr resultx = interp.reduce_whnf(testx);
     if (resultx == primx) {
         std::cout << "PASS\n";
     }
@@ -189,9 +189,9 @@ void test_scott_tuple() {
         show_node(resultx);
     }
 
-    NodePtr testy = lib.apply(snd, tup);
+    RootPtr testy = lib.apply(snd, tup);
     lib.fixup(testy);
-    NodePtr resulty = interp.reduce_whnf(testy);
+    RootPtr resulty = interp.reduce_whnf(testy);
     if (resulty == primy) {
         std::cout << "PASS\n";
     }
@@ -208,23 +208,23 @@ void test_scott_stream(size_t heap_size) {
     NodeMaker lib(&interp);
     
     // λx y c. c x y
-    NodePtr tuple = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(0), lib.var(2)), lib.var(1)))));
+    RootPtr tuple = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(0), lib.var(2)), lib.var(1)))));
     lib.fixup(tuple);
     // λt. t (λx y. x)
-    NodePtr fst = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(1)))));
+    RootPtr fst = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(1)))));
     lib.fixup(fst);
     // λt. t (λx y. y)
-    NodePtr snd = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(0)))));
+    RootPtr snd = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(0)))));
     lib.fixup(snd);
 
-    NodePtr arg = lib.prim();
+    RootPtr arg = lib.prim();
     lib.fixup(arg);
-    NodePtr stream = lib.apply(lib.fix(), lib.apply(tuple, arg));
+    RootPtr stream = lib.apply(lib.fix(), lib.apply(tuple, arg));
     lib.fixup(stream);
 
     try {
         for (int i = 0; i < 100; i++) {{
-            NodePtr item = lib.apply(fst, stream);
+            RootPtr item = lib.apply(fst, stream);
             lib.fixup(item);
             item = interp.reduce_whnf(item);
             if (item != arg) {
@@ -254,23 +254,23 @@ void test_heap_resize() {
     Interp interp(heap_size, 0);
     NodeMaker lib(&interp);
 
-    NodePtr idf = lib.lambda(lib.var(0));
+    RootPtr idf = lib.lambda(lib.var(0));
     lib.fixup(idf);
 
     // λf x. x
-    NodePtr zero = lib.lambda(lib.lambda(lib.var(0)));
+    RootPtr zero = lib.lambda(lib.lambda(lib.var(0)));
     lib.fixup(zero);
     
     // λn f x. f (n f x)
-    NodePtr succ = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.var(1), lib.apply(lib.apply(lib.var(2), lib.var(1)), lib.var(0))))));
+    RootPtr succ = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.var(1), lib.apply(lib.apply(lib.var(2), lib.var(1)), lib.var(0))))));
     lib.fixup(succ);
 
     // λx y. x (y succ) zero
-    NodePtr times = lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(1), lib.apply(lib.var(0), succ)), zero)));
+    RootPtr times = lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(1), lib.apply(lib.var(0), succ)), zero)));
     lib.fixup(times);
 
     // λf x. f (f (f (f (f (f (f (f (f (f x)))))))))
-    NodePtr ten = lib.lambda(lib.lambda(
+    RootPtr ten = lib.lambda(lib.lambda(
         lib.apply(lib.var(1),
         lib.apply(lib.var(1),
         lib.apply(lib.var(1),
@@ -283,14 +283,14 @@ void test_heap_resize() {
         lib.apply(lib.var(1), lib.var(0)))))))))))));
     lib.fixup(ten);
     
-    NodePtr thousand = lib.apply(lib.apply(times, lib.apply(lib.apply(times, ten), ten)), ten);
+    RootPtr thousand = lib.apply(lib.apply(times, lib.apply(lib.apply(times, ten), ten)), ten);
     lib.fixup(thousand);
 
-    NodePtr arg = lib.prim();
+    RootPtr arg = lib.prim();
     lib.fixup(arg);
 
     // thousand idf (thousand idf prim)
-    NodePtr test = lib.apply(lib.apply(thousand, idf), lib.apply(lib.apply(thousand, idf), arg));
+    RootPtr test = lib.apply(lib.apply(thousand, idf), lib.apply(lib.apply(thousand, idf), arg));
     lib.fixup(test);
 
     test = interp.reduce_whnf(test);
@@ -311,22 +311,22 @@ void test_cycle_preservation() {
     NodeMaker lib(&interp);
     
     // λx y c. c x y
-    NodePtr tuple = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(0), lib.var(2)), lib.var(1)))));
+    RootPtr tuple = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(0), lib.var(2)), lib.var(1)))));
     lib.fixup(tuple);
     // λt. t (λx y. x)
-    NodePtr fst = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(1)))));
+    RootPtr fst = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(1)))));
     lib.fixup(fst);
     // λt. t (λx y. y)
-    NodePtr snd = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(0)))));
+    RootPtr snd = lib.lambda(lib.apply(lib.var(0), lib.lambda(lib.lambda(lib.var(0)))));
     lib.fixup(snd);
 
-    NodePtr arg = lib.prim();
+    RootPtr arg = lib.prim();
     lib.fixup(arg);
     
-    NodePtr stream = lib.apply(lib.fix(), lib.apply(tuple, arg));
+    RootPtr stream = lib.apply(lib.fix(), lib.apply(tuple, arg));
     lib.fixup(stream);
 
-    NodePtr test = lib.apply(snd, stream);
+    RootPtr test = lib.apply(snd, stream);
     lib.fixup(test);
     test = interp.reduce_whnf(test);
     if (test == stream) {

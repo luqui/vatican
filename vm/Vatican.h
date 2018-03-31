@@ -167,10 +167,10 @@ private:
 };
 
 
-class Pool {
+class Heap {
   public:
-    Pool(size_t heapsize);
-    virtual ~Pool();
+    Heap(size_t heapsize);
+    virtual ~Heap();
 
     // Returns 0 if allocation was impossible
     void* allocate(size_t size);
@@ -179,20 +179,20 @@ class Pool {
     void clear();
 
     bool contains(void* ptr) {
-        return _pool_start <= ptr && ptr < _pool_end;
+        return _start <= ptr && ptr < _end;
     }
 
     size_t size() const {
-        return _pool_end - _pool_start;
+        return _end - _start;
     }
 
     size_t allocated() const {
-        return _cur - _pool_start;
+        return _cur - _start;
     }
   private:
-    byte* _pool_start;
+    byte* _start;
     byte* _cur;
-    byte* _pool_end;
+    byte* _end;
 };
 
 
@@ -306,8 +306,8 @@ class Interp {
     void* allocate_node(size_t size);
 
     int _fuel;
-    Pool* _heap;
-    Pool* _backup_heap;
+    Heap* _heap;
+    Heap* _backup_heap;
     
     NodePtr _rootset_front;
     NodePtr _rootset_back;

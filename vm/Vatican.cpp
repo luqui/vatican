@@ -6,17 +6,17 @@
 
 #include "Vatican.h"
 
-Pool::Pool(size_t heapsize) {
-    _pool_start = _cur = new byte[heapsize];
-    _pool_end = _pool_start + heapsize;
+Heap::Heap(size_t heapsize) {
+    _start = _cur = new byte[heapsize];
+    _end = _start + heapsize;
 }
 
-Pool::~Pool() {
-    delete _pool_start;
+Heap::~Heap() {
+    delete _start;
 }
 
-void* Pool::allocate(size_t size) {
-    if (_cur + size < _pool_end) {  // XXX should be <= right?
+void* Heap::allocate(size_t size) {
+    if (_cur + size < _end) {  // XXX should be <= right?
         void* ret = (void*)_cur;
         _cur += size;
         return ret;
@@ -26,11 +26,11 @@ void* Pool::allocate(size_t size) {
     }
 }
 
-void Pool::clear() {
-    _cur = _pool_start;
+void Heap::clear() {
+    _cur = _start;
 
     // We clear it for now to catch any bugs faster.
-    memset(_pool_start, 0xbf, size());
+    memset(_start, 0xbf, size());
 }
 
 
@@ -82,7 +82,7 @@ NodePtr::NodePtr(Interp* interp, Node* ptr)
 class time_to_gc_exception : public std::exception { };
 
 void Interp::init(size_t heap_size, int fuel) {
-    _heap = new Pool(heap_size);
+    _heap = new Heap(heap_size);
     _backup_heap = 0;
     _heap->clear();
     _fuel = fuel;
@@ -231,15 +231,15 @@ Node* Interp::substitute(Node* body, depth_t var, Node* arg, depth_t shift) {
 
 class GCVisitor : public NodeVisitor {
 public:
-    GCVisitor(Pool* old_pool, Node** gc_stack)
+    GCVisitor(Heap* old_heap, Node** gc_stack)
         : work_left(false)
         , _gc_stack(gc_stack)
-        , _old_pool(old_pool)
+        , _old_heap(old_heap)
     { }
 
     void visit(Node*& node) {
         node = squash_indirs(node);
-        if (_old_pool->contains(node)) {
+        if (_old_heap->contains(node)) {
             if (node->gc_next == 0) {
                 node->gc_next = *_gc_stack;
                 *_gc_stack = node;
@@ -252,12 +252,12 @@ public:
 
 private:
     Node** _gc_stack;
-    Pool* _old_pool;
+    Heap* _old_heap;
 };
 
 void Interp::run_gc() {
     if (_backup_heap == 0) {
-        _backup_heap = new Pool(_heap->size());    
+        _backup_heap = new Heap(_heap->size());    
     }
     std::swap(_heap, _backup_heap);
 
@@ -281,7 +281,7 @@ void Interp::run_gc() {
         GCVisitor visitor(_backup_heap, &top);
         node->visit(&visitor);
         
-        // Copy node to new pool (if it was in the old pool, so we don't copy 
+        // Copy node to new heap (if it was in the old heap, so we don't copy 
         // externally allocated things).
         Node* copied;
         if (_backup_heap->contains(node)) {
@@ -328,7 +328,7 @@ void Interp::run_gc() {
     size_t heapsize = _backup_heap->size();
     if (2 * _heap->allocated() > heapsize) {
         delete _backup_heap;
-        _backup_heap = new Pool(2*heapsize);
+        _backup_heap = new Heap(2*heapsize);
     }
     _backup_heap->clear();
 }

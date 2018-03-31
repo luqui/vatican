@@ -1,3 +1,6 @@
+Memo Tables and Uniqueness
+--------------------------
+
 So before subst node memo tables, which seem awfully expensive, I want to
 implement uniqueness tracking.  Essentially we keep a flag on all nodes tracking
 (approximately) whether there is more than one reference to it.  Most nodes will
@@ -26,9 +29,10 @@ allocating.
 For memo table GC, we need some external data structure (C++ has a multimap),
 storing "if X is alive, then it should go in (copied) memo tables M1,M2,..." .
 I think that is enough, since when you copy the memo table you immediately copy
-all the live keys, and then set up hooks for the not-yet discovered keys.  
+all the live keys, and then set up hooks for the not-yet discovered keys.
 
-----
+Unevaluation
+------------
 
 Looking at the heap resize test, it might be nice to allow a construct to
 "de-share" something, to manually repeat work in the case that sharing would
@@ -50,7 +54,7 @@ We can count the "partial size" of a rooted graph by counting the "uniquely
 reachable subgraph", that is everything that is guaranteed to die if the root
 dies.  So if we keep the unevaluated and evaluated forms of a non-unique node
 next to each other (at the cost of only one node until the next GC), we can
-measure the partial size of each and compare them.  
+measure the partial size of each and compare them.
 
 Not quite!  What if there are non-unique nodes which are still in the uniquely
 reachable subgraph; e.g. the graph is a DAG, but located entirely within the
@@ -61,20 +65,55 @@ decision by the time we consdier the outer...
 
 Barring that nested case (which is an important case!), we can keep a recursive
 count of the number of times the node was "entered" (including "goto REDO") to
-get a sense of the amount of work put in -- return it from reduce_whnf_rec.
+get a sense of the amount of work put in -- return it from `reduce_whnf_rec`.
 Then there is some parameter that relates bytes to reductions, and you make the
 decision about which is more valuable at GC time.
-
-This is cool. :-)
 
 Note that the more references there are to a node, the more valuable each
 element of time work spent is (assuming that each reference will eventually
 consume the node), whereas the space cost remains the same.  That is, more
-references -> bigger caches for the same amount of work.
+references implies bigger caches for the same amount of work.
 
 I'm currently thinking of implementing a "reference" node whose job is
 essentially to have more than one thing pointing at it.  Every other node will
 only have one unique reference.  These reference nodes can keep track of all
 this sophisticated stuff, like the unevaluated version and the time counter.
 Keeping multiply-referenced nodes separate might have consequences for the
-whole algorithm and GC
+whole algorithm and GC.
+
+Reachability Counting
+---------------------
+
+It turns out that tracking the reachability set of a DAG is O(V^2) in general.
+I have an algorithm which I think might work for this case though, again resting
+on the assumption that the number of non-unique nodes is small.  Do a recursive
+depth first search of the graph, returning a data structure with the following
+information:
+
+    * An integer indicating the amount of space that would be freed immeidately
+      if the traversed link were removed.
+    * A map from non-unique nodes to a pair:
+        * The amount of space that would be freed if the key were collected
+        * The number of total references to that node (so this must be known...)
+        * The number of references to that node that we have found in this
+          subgraph traversal
+
+And whenever we traverse a node with multiple children, we add up the number of
+references to each non-unique node that we have traversed.  If it's equal to the
+total references, then this node "contains" the non-unique one, it can be
+removed from the outgoing map and its space added to the outgoing space.
+
+                    ROOT
+                     | {3, <empty>}
+                     x
+      {0,a:{2,2,1}} ( ) {0,a:{2,2,1}}
+                     a
+      {0,b:{1,2,1}} ( ) {0,b:{1,2,1}}
+                     b
+
+This accounts for local dagness relatively efficiently.  If there are non-local
+non-unique references it could get expensive.  I think most of those will be to
+library functions.  Note that the above tracking is irrelevant for nodes whose
+"space to be freed" is zero -- who cares?  And if something is directly
+reachable from the root set, then it will not be freed, so you can have a
+bazillion references to it and it won't clutter up these maps.

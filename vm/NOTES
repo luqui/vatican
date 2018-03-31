@@ -67,4 +67,14 @@ decision about which is more valuable at GC time.
 
 This is cool. :-)
 
+Note that the more references there are to a node, the more valuable each
+element of time work spent is (assuming that each reference will eventually
+consume the node), whereas the space cost remains the same.  That is, more
+references -> bigger caches for the same amount of work.
 
+I'm currently thinking of implementing a "reference" node whose job is
+essentially to have more than one thing pointing at it.  Every other node will
+only have one unique reference.  These reference nodes can keep track of all
+this sophisticated stuff, like the unevaluated version and the time counter.
+Keeping multiply-referenced nodes separate might have consequences for the
+whole algorithm and GC

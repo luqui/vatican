@@ -1,0 +1,29 @@
+So before subst node memo tables, which seem awfully expensive, I want to
+implement uniqueness tracking.  Essentially we keep a flag on all nodes tracking
+(approximately) whether there is more than one reference to it.  Most nodes will
+be unique, with a few non-unique nodes.  Of course a subst memo table need only
+memoize nonunique nodes, since unique ones are completely destroyed when
+substituted.  I think that will significantly reduce how much memo table
+overhead there is.  I want to implement uniqueness tracking and collect some
+statistics about how many nodes are unique to test this hypothesis.
+
+After uniqueness tracking is implemented, we could then GC unique nodes early.
+If we keep a small object pool for "small" nodes (var, lambda, indir) (or heck
+even all nodes and waste the extra space -- it's less than a factor of 2) then
+we can collect the unique nodes back into the pool like reference counting
+decreasing the number of copy GCs we need.  People say reference counting is
+less efficient than copy GC but I find that hard to believe.  We need some
+benchmarks, but might as well try it as long as we're going half way there
+already.
+
+I think basically every node is unique except for when a subst splits into both
+branches of an apply.  So we need to change the subst algorithm to be a little
+more eager, so that it can see the low-depth branch vanish immediately and
+correctly track uniqueness of the target of the substitution.  The subst
+algorithm can also be changed to immediately reuse unique body nodes instead of
+allocating.
+
+For memo table GC, we need some external data structure (C++ has a multimap),
+storing "if X is alive, then it should go in (copied) memo tables M1,M2,..." .
+I think that is enough, since when you copy the memo table you immediately copy
+all the live keys, and then set up hooks for the not-yet discovered keys.  

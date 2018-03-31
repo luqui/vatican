@@ -28,9 +28,43 @@ storing "if X is alive, then it should go in (copied) memo tables M1,M2,..." .
 I think that is enough, since when you copy the memo table you immediately copy
 all the live keys, and then set up hooks for the not-yet discovered keys.  
 
+----
 
-Side note (looking at the heap resize test) it might be nice to allow a
-construct to "de-share" something, to manually repeat work in the case that
-sharing would take too much memory (which might also make it unique). Or do
-something really cool like trying to detect whether to share using some
-time/space trade-off / conal's "unevaluation".
+Looking at the heap resize test, it might be nice to allow a construct to
+"de-share" something, to manually repeat work in the case that sharing would
+take too much memory (which might also make it unique). Or do something really
+cool like trying to detect whether to share using some time/space trade-off /
+conal's "unevaluation".
+
+The non-unique nodes seem like good candidates to unevaluate, the ones that will
+stay around eating space after they are used (because in lazy code a node not
+usually constructed until it is ready to be used for the first time). I'm
+thinking something like, when a node has multiple references, keep an
+unevaluated version of it around and measure the relative amount of work you put
+into evaluating it.  Then when it's time to GC, if the evaluated subtree
+(however you are supposed count that!) is dominated by its size rather than its
+time, keep the unevaluated version instead.  That is very rough and I don't know
+how doable that is in practice.
+
+We can count the "partial size" of a rooted graph by counting the "uniquely
+reachable subgraph", that is everything that is guaranteed to die if the root
+dies.  So if we keep the unevaluated and evaluated forms of a non-unique node
+next to each other (at the cost of only one node until the next GC), we can
+measure the partial size of each and compare them.  
+
+Not quite!  What if there are non-unique nodes which are still in the uniquely
+reachable subgraph; e.g. the graph is a DAG, but located entirely within the
+subgraph. A full reference count would suffice to detect this.   Note, however,
+that the inner non-unique node would be considering its own unevaluation.
+Perhaps we can decide in some order, so that the inner one will have made its
+decision by the time we consdier the outer...
+
+Barring that nested case (which is an important case!), we can keep a recursive
+count of the number of times the node was "entered" (including "goto REDO") to
+get a sense of the amount of work put in -- return it from reduce_whnf_rec.
+Then there is some parameter that relates bytes to reductions, and you make the
+decision about which is more valuable at GC time.
+
+This is cool. :-)
+
+

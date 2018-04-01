@@ -144,14 +144,14 @@ struct SubstNode : Node {
     SubstNode(depth_t depth, const NodePtr& body, depth_t var, const NodePtr& arg, depth_t shift)
         : Node(NODETYPE_SUBST, false, depth)
         , body(body)
-        , var(var)
         , arg(arg)
+        , var(var)
         , shift(shift)
     { }
         
     NodePtr body;
-    depth_t var;
     NodePtr arg;
+    depth_t var;
     depth_t shift;
 
     void visit(NodeVisitor* visitor) {
@@ -288,7 +288,6 @@ class RootPtr : GCRef {
         // Remove this node from the rootset
         _prev->_next = _next;
         _next->_prev = _prev;
-        _ptr->dec();
     }
 
     RootPtr(const RootPtr& p);

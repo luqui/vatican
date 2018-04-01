@@ -291,6 +291,10 @@ public:
         }
     }
 
+    bool alive(Node* node) const {
+        return node->gc_next || !_old_heap->contains(node);
+    }
+
     bool work_left;
 
 private:
@@ -351,7 +355,7 @@ void Interp::run_gc() {
         }
 
         // Add the node to the cleanup stack if it had uncopied children.
-        if (visitor.work_left) {
+        if (visitor.work_left || copied->needs_cleanup(&visitor)) {
             copied->gc_next = cleanup;
             cleanup = copied;
         }
@@ -366,6 +370,7 @@ void Interp::run_gc() {
         // Update indirections.  Everything should be copied at this point.
         GCVisitor visitor(_backup_heap, &top);
         node->visit(&visitor);
+        node->cleanup(&visitor);
         assert(!visitor.work_left);
     }
     

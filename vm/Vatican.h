@@ -27,12 +27,15 @@ class NodeVisitor {
 public:
     virtual ~NodeVisitor() { }
     virtual void visit(class NodePtr&) = 0;
+    virtual bool alive(Node*) const = 0;
 };
 
 class GCRef {
 public:
     virtual ~GCRef() { }
     virtual void visit(NodeVisitor* visitor) = 0;
+    virtual bool needs_cleanup(NodeVisitor* visitor) const { return false; }
+    virtual void cleanup(NodeVisitor* visitor) { }
 };
 
 struct Node : public GCRef {
@@ -166,7 +169,25 @@ struct SubstNode : Node {
     void visit(NodeVisitor* visitor) {
         visitor->visit(body);
         visitor->visit(arg);
+
+        for (std::unordered_map<Node*, NodePtr>::iterator i = memo->begin(); i != memo->end(); ++i) {
+            if (visitor->alive(i->first)) {
+                visitor->visit(i->second);
+            }
+        }
     }
+    bool needs_cleanup(NodeVisitor* visitor) const { return true; }
+    void cleanup(NodeVisitor* visitor) {
+        for (std::unordered_map<Node*, NodePtr>::iterator i = memo->begin(); i != memo->end();) {
+            std::unordered_map<Node*, NodePtr>::iterator next_i = i;
+            ++next_i;
+            if (!visitor->alive(i->first)) {
+                memo->erase(i);
+                i = next_i;
+            }
+        }
+    }
+    
     size_t size() { return sizeof(SubstNode); }
     Node* copy(void* target) {
         return new (target) SubstNode(*this);

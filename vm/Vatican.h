@@ -370,7 +370,7 @@ class RootPtr : GCRef {
 
     Node* follow_indirs() const {
         Node* r = _ptr.get_ptr();
-        if (r->type == NODETYPE_INDIR) {
+        while (r->type == NODETYPE_INDIR) {
             r = ((IndirNode*)r)->target.get_ptr();
         }
         return r;

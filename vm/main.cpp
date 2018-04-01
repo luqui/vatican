@@ -4,23 +4,23 @@
 #include <set>
 #include "Vatican.h"
 
-void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
-    if (seen.find(node) != seen.end()) {
+void show_node_rec(const NodePtr& node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
+    if (seen.find(node.get_ptr()) != seen.end()) {
         std::cout << "LOOP";
         return;
     }
-    seen.insert(node);
+    seen.insert(node.get_ptr());
 
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
-            LambdaNode* lambda = (LambdaNode*)node;
+            LambdaNode* lambda = node.get_subtype<LambdaNode>();
             if (lambda_parens) { std::cout << "("; }
             std::cout << "\\[" << lambda->depth+1 << "]. ";
             show_node_rec(lambda->body, false, false, seen);
             if (lambda_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_APPLY: {
-            ApplyNode* apply = (ApplyNode*)node;
+            ApplyNode* apply = node.get_subtype<ApplyNode>();
             if (apply_parens) { std::cout << "("; }
             show_node_rec(apply->f, true, false, seen);
             std::cout << " ";
@@ -34,15 +34,15 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
             std::cout << "PRIM";
         }
         break; case NODETYPE_SUBST: {
-            SubstNode* subst = (SubstNode*)node;
+            SubstNode* subst = node.get_subtype<SubstNode>();
             std::cout << "(";
-            show_node_rec(subst->data.body, true, true, seen);
-            std::cout << " @[ " << subst->data.var << " | " << subst->data.shift << " ] ";
-            show_node_rec(subst->data.arg, true, true, seen);
+            show_node_rec(subst->body, true, true, seen);
+            std::cout << " @[ " << subst->var << " | " << subst->shift << " ] ";
+            show_node_rec(subst->arg, true, true, seen);
             std::cout << ")";
         }
         break; case NODETYPE_INDIR: {
-            IndirNode* indir = (IndirNode*)node;
+            IndirNode* indir = node.get_subtype<IndirNode>();
             std::cout << "!";
             show_node_rec(indir->target, true, true, seen);
         }

@@ -15,10 +15,16 @@ enum NodeType
     , NODETYPE_MAX
     };
 
+template<size_t s>
+class padding {
+private:
+    byte _padding[s];
+};
+
 class NodeVisitor {
 public:
     virtual ~NodeVisitor() { }
-    virtual void visit(Node*&) = 0;
+    virtual void visit(class NodePtr&) = 0;
 };
 
 class GCRef {
@@ -29,26 +35,98 @@ public:
 
 struct Node : public GCRef {
     Node(NodeType type, bool blocked, depth_t depth) 
-        : gc_next(0), depth(depth), blocked(blocked), type(type)
+        : gc_next(0), depth(depth), blocked(blocked), refcount(0), type(type)
     { }
 
     Node* gc_next;
     depth_t depth;
     bool blocked;
+    int refcount;
     NodeType type;
 
     virtual size_t size() = 0;
     virtual Node* copy(void* target) = 0;
+    virtual void destroy() = 0;
+
+    void inc() {
+        refcount++;
+    }
+    void dec() {
+        refcount--;
+        if (refcount == 0) {
+            destroy();
+        }
+    }
+};
+
+class NodePtr {
+  public:
+    NodePtr() : _ptr(0) { }
+    
+    NodePtr(Node* node) : _ptr(node) {
+        if (_ptr) {
+            _ptr->inc();
+        }
+    }
+    ~NodePtr() {
+        if (_ptr) {
+            _ptr->dec();
+        }
+    }
+
+    NodePtr(const NodePtr& p) : _ptr(p._ptr) {
+        if (_ptr) {
+            _ptr->inc();
+        }
+    }
+
+    NodePtr& operator= (const NodePtr& p) {
+        if (p._ptr == _ptr) return *this;
+        if (_ptr) {
+            _ptr->dec();
+        }
+        _ptr = p._ptr;
+        if (_ptr) {
+            _ptr->inc();
+        }
+        return *this;
+    }
+
+    NodePtr& operator= (Node* node) {
+        if (_ptr == node) return *this;
+        if (_ptr) {
+            _ptr->dec();
+        }
+        _ptr = node;
+        if (_ptr) {
+            _ptr->inc();
+        }
+        return *this;
+    }
+
+    Node* operator-> () const {
+        return _ptr;
+    }
+    Node* get_ptr() const {
+        return _ptr;
+    }
+    template<class T>
+    T* get_subtype() const {
+        return (T*)_ptr;
+    }
+
+  private:
+    Node* _ptr;
 };
 
 
 struct LambdaNode : Node {
-    LambdaNode(depth_t depth, Node* body) 
+    LambdaNode(depth_t depth, const NodePtr& body) 
         : Node(NODETYPE_LAMBDA, true, depth)
         , body(body)
     { }
 
-    Node* body;
+    NodePtr body;
 
     void visit(NodeVisitor* visitor) {
         visitor->visit(body);
@@ -57,54 +135,51 @@ struct LambdaNode : Node {
     Node* copy(void* target) {
         return new (target) LambdaNode(*this);
     } 
-};
-
-// This is separated out so that we can pad ApplyNode appropriately.
-struct SubstData {
-    Node* body;
-    depth_t var;
-    Node* arg;
-    depth_t shift;
+    void destroy() {
+        body = 0;
+    }
 };
 
 struct SubstNode : Node {
-    SubstNode(depth_t depth, Node* body, depth_t var, Node* arg, depth_t shift)
+    SubstNode(depth_t depth, const NodePtr& body, depth_t var, const NodePtr& arg, depth_t shift)
         : Node(NODETYPE_SUBST, false, depth)
-    {
-        data.body = body;
-        data.var = var;
-        data.arg = arg;
-        data.shift = shift;
-    }
+        , body(body)
+        , var(var)
+        , arg(arg)
+        , shift(shift)
+    { }
         
-    SubstData data;
+    NodePtr body;
+    depth_t var;
+    NodePtr arg;
+    depth_t shift;
 
     void visit(NodeVisitor* visitor) {
-        visitor->visit(data.body);
-        visitor->visit(data.arg);
+        visitor->visit(body);
+        visitor->visit(arg);
     }
     size_t size() { return sizeof(SubstNode); }
     Node* copy(void* target) {
         return new (target) SubstNode(*this);
-    } 
+    }
+    void destroy() {
+        body = 0;
+        arg = 0;
+    }
 };
 
 struct ApplyNode : Node {
-    ApplyNode(depth_t depth, Node* f, Node* x)
+    ApplyNode(depth_t depth, const NodePtr& f, const NodePtr& x)
         : Node(NODETYPE_APPLY, false, depth)
         , f(f)
         , x(x)
     { }
 
-    union {
-        struct {
-            Node* f;
-            Node* x;
-        };
+    NodePtr f;
+    NodePtr x;
 
-        // This is to make sure we have enough space for the transmogrification
-        SubstData _padding;
-    };
+    // This is to make sure we have enough space for the transmogrification
+    padding<2*sizeof(depth_t)> _padding;
 
     void visit(NodeVisitor* visitor) {
         visitor->visit(f);
@@ -114,6 +189,10 @@ struct ApplyNode : Node {
     Node* copy(void* target) {
         return new (target) ApplyNode(*this);
     } 
+    void destroy() {
+        f = 0;
+        x = 0;
+    }
 };
 
 struct VarNode : Node {
@@ -126,6 +205,7 @@ struct VarNode : Node {
     Node* copy(void* target) {
         return new (target) VarNode(*this);
     } 
+    void destroy() { }
 
 private:
     // It's possible we can use gc_next to indirect to avoid this padding.
@@ -133,12 +213,12 @@ private:
 };
 
 struct IndirNode : Node {
-    IndirNode(Node* target)
+    IndirNode(const NodePtr& target)
         : Node(NODETYPE_INDIR, false, target->depth)
         , target(target)
     { }
 
-    Node* target;
+    NodePtr target;
 
     void visit(NodeVisitor* visitor) {
         // XXX I think indir is a special case, so not sure what this should be...
@@ -148,6 +228,9 @@ struct IndirNode : Node {
     Node* copy(void* target) {
         return new (target) IndirNode(*this);
     } 
+    void destroy() {
+        target = 0;
+    }
 };
 
 struct PrimNode : Node 
@@ -161,9 +244,10 @@ struct PrimNode : Node
     Node* copy(void* target) {
         return new (target) PrimNode(*this);
     } 
+    void destroy() { }
 
 private:
-    Node* _indir_padding;
+    padding<sizeof(Node*)> _indir_padding;
 };
 
 
@@ -204,6 +288,7 @@ class RootPtr : GCRef {
         // Remove this node from the rootset
         _prev->_next = _next;
         _next->_prev = _prev;
+        _ptr->dec();
     }
 
     RootPtr(const RootPtr& p);
@@ -211,10 +296,10 @@ class RootPtr : GCRef {
     RootPtr& operator= (const RootPtr& const_p);
 
     Node* operator -> () {
-        return _ptr;
+        return _ptr.operator->();
     }
-    const Node* operator -> () const {
-        return _ptr;
+    Node* operator -> () const {
+        return _ptr.operator->();
     }
 
     void visit(NodeVisitor* visitor) {
@@ -230,11 +315,11 @@ class RootPtr : GCRef {
     }
 
     Node* unsafe_get_ptr() const {
-        return _ptr;
+        return _ptr.get_ptr();
     }
 
   private:
-    RootPtr(class Interp* interp, Node* ptr);
+    RootPtr(class Interp* interp, const NodePtr& ptr);
 
     RootPtr()
         : _ptr(0)
@@ -248,14 +333,14 @@ class RootPtr : GCRef {
     }
 
     Node* follow_indirs() const {
-        Node* r = _ptr;
+        Node* r = _ptr.get_ptr();
         if (r->type == NODETYPE_INDIR) {
-            r = ((IndirNode*)r)->target;
+            r = ((IndirNode*)r)->target.get_ptr();
         }
         return r;
     }
 
-    Node* _ptr;
+    NodePtr _ptr;
     RootPtr* _next;
     RootPtr* _prev;
 };
@@ -293,10 +378,10 @@ class Interp {
 
     void init(size_t heap_size, int fuel);
     
-    Node* reduce_whnf_wrapper(Node* node);
-    Node* reduce_whnf_rec(Node* node);
+    NodePtr reduce_whnf_wrapper(const NodePtr& node);
+    NodePtr reduce_whnf_rec(NodePtr node);
 
-    Node* substitute(Node* body, depth_t var, Node* arg, depth_t shift);
+    NodePtr substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift);
 
     template<class T> 
     void* allocate_node() {
@@ -341,10 +426,14 @@ class NodeMaker {
     }
 
     RootPtr fix() {
-        Node* var = new (_interp->allocate_node<VarNode>()) VarNode(1);
-        ApplyNode* body = new (_interp->allocate_node<ApplyNode>()) ApplyNode(1, var, 0);
-        body->x = body;
-        Node* lambda = new (_interp->allocate_node<LambdaNode>()) LambdaNode(0, body);
+        NodePtr var = new (_interp->allocate_node<VarNode>()) VarNode(1);
+        NodePtr body = new (_interp->allocate_node<ApplyNode>()) ApplyNode(1, var, 0);
+        var->inc();
+
+        body.get_subtype<ApplyNode>()->x = body;
+        body->inc();
+        NodePtr lambda = new (_interp->allocate_node<LambdaNode>()) LambdaNode(0, body);
+        body->inc();
         return RootPtr(_interp, lambda);
     }
 
@@ -357,7 +446,7 @@ class NodeMaker {
     void fixup(const RootPtr& ptr);
     
   private:
-    void fixup_rec(Node* node, depth_t depth);
+    void fixup_rec(const NodePtr& node, depth_t depth);
     
     Interp* _interp;
 };

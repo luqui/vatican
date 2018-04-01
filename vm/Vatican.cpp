@@ -34,15 +34,16 @@ void Heap::clear() {
 }
 
 
-Node* squash_indirs(Node* node) {
-    Node* end = node;
+NodePtr squash_indirs(const NodePtr& node) {
+    // TODO NodePtrs might be overkill for the traversal here
+    NodePtr end = node;
     while (end->type == NODETYPE_INDIR) {
-        end = ((IndirNode*)end)->target;
+        end = end.get_subtype<IndirNode>()->target;
     }
-    Node* iter = node;
+    NodePtr iter = node;
     while (iter->type == NODETYPE_INDIR) {
-        Node* next = ((IndirNode*)iter)->target;
-        ((IndirNode*)iter)->target = end;
+        NodePtr next = iter.get_subtype<IndirNode>()->target;
+        iter.get_subtype<IndirNode>()->target = end;
         iter = next;
     }
     return end;
@@ -65,11 +66,12 @@ RootPtr::RootPtr(const RootPtr& const_p) {
 
 RootPtr& RootPtr::operator= (const RootPtr& p)
 {
-    this->_ptr = p._ptr;
+    _ptr = p._ptr;
+    _ptr->inc();
     return *this;
 }
 
-RootPtr::RootPtr(Interp* interp, Node* ptr)
+RootPtr::RootPtr(Interp* interp, const NodePtr& ptr)
     : _ptr(ptr)
 {
     // Put this RootPtr on the back of the rootset
@@ -77,6 +79,7 @@ RootPtr::RootPtr(Interp* interp, Node* ptr)
     _prev = interp->_rootset_back._prev;
     interp->_rootset_back._prev->_next = this;
     interp->_rootset_back._prev = this;
+    _ptr->inc();
 }
 
 class time_to_gc_exception : public std::exception { };
@@ -112,16 +115,16 @@ RootPtr Interp::reduce_whnf(const RootPtr& node) {
     }
 }
 
-Node* Interp::reduce_whnf_wrapper(Node* node) {
-    assert(!_backup_heap || !_backup_heap->contains(node));
+NodePtr Interp::reduce_whnf_wrapper(const NodePtr& node) {
+    assert(!_backup_heap || !_backup_heap->contains(node.get_ptr()));
     assert(0 <= node->type && node->type < NODETYPE_MAX);
-    Node* r = reduce_whnf_rec(node);
-    assert(!_backup_heap || !_backup_heap->contains(r));
+    NodePtr r = reduce_whnf_rec(node);
+    assert(!_backup_heap || !_backup_heap->contains(r.get_ptr()));
     assert(0 <= node->type && node->type < NODETYPE_MAX);
     return r;
 }
 
-Node* Interp::reduce_whnf_rec(Node* node) {
+NodePtr Interp::reduce_whnf_rec(NodePtr node) {
   REDO:
     if (_fuel > 0 && --_fuel == 0) {
         throw std::runtime_error("Out of fuel");
@@ -138,7 +141,7 @@ Node* Interp::reduce_whnf_rec(Node* node) {
             return node;  // Already in whnf.
         }
         break; case NODETYPE_APPLY: {
-            ApplyNode* apply = (ApplyNode*)node;
+            ApplyNode* apply = node.get_subtype<ApplyNode>();
             apply->f = reduce_whnf_wrapper(apply->f);
             
             if (apply->f->type != NODETYPE_LAMBDA) {
@@ -149,25 +152,28 @@ Node* Interp::reduce_whnf_rec(Node* node) {
             depth_t bind_depth = apply->f->depth + 1;
             depth_t shift = apply->depth - bind_depth;
 
-            // Very sensitive!  Don't inline, we are mutating node's type!
-            Node* subst_body = ((LambdaNode*)apply->f)->body;
-            Node* subst_arg = apply->x;
+            NodePtr subst_body = apply->f.get_subtype<LambdaNode>()->body;
+            NodePtr subst_arg = apply->x;
 
+            int refcount = node->refcount;
             // NB this overwrites node!
             // Assert to make sure the transmogrification is safe.
             assert(sizeof(ApplyNode) >= sizeof(SubstNode));
-            new (node) SubstNode(
+            new (node.get_ptr()) SubstNode(
                 apply->depth, subst_body, bind_depth, subst_arg, shift);
+            node->refcount = refcount;
             goto REDO;
         }
         break; case NODETYPE_SUBST: {
-            SubstNode* subst = (SubstNode*)node;
-            subst->data.body = reduce_whnf_wrapper(subst->data.body);
-            Node* substed = substitute(subst->data.body, subst->data.var, subst->data.arg, subst->data.shift);
+            SubstNode* subst = node.get_subtype<SubstNode>();
+            subst->body = reduce_whnf_wrapper(subst->body);
+            NodePtr substed = substitute(subst->body, subst->var, subst->arg, subst->shift);
 
             // Make sure the transmogrification is safe.
+            int refcount = node->refcount;
             assert(sizeof(SubstNode) >= sizeof(IndirNode));
-            new (node) IndirNode(substed);
+            new (node.get_ptr()) IndirNode(substed);
+            node->refcount = refcount;
             goto REDO;
         }
         break; case NODETYPE_INDIR: {
@@ -180,7 +186,7 @@ Node* Interp::reduce_whnf_rec(Node* node) {
     }
 }
 
-Node* Interp::substitute(Node* body, depth_t var, Node* arg, depth_t shift) {
+NodePtr Interp::substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift) {
     body = squash_indirs(body);
 
     // If the depth of the body is less than the depth of the variable we are
@@ -193,7 +199,7 @@ Node* Interp::substitute(Node* body, depth_t var, Node* arg, depth_t shift) {
     depth_t newdepth = body->depth + shift;
     switch (body->type) {
         break; case NODETYPE_VAR: {
-            VarNode* varnode = (VarNode*)body;
+            VarNode* varnode = body.get_subtype<VarNode>();
             if (varnode->depth == var) {
                 return arg;
             }
@@ -202,28 +208,28 @@ Node* Interp::substitute(Node* body, depth_t var, Node* arg, depth_t shift) {
             }
         }
         break; case NODETYPE_LAMBDA: {
-            LambdaNode* lambda = (LambdaNode*)body;
+            LambdaNode* lambda = body.get_subtype<LambdaNode>();
             
-            Node* substbody = var <= lambda->body->depth
-                            ? new (allocate_node<SubstNode>()) SubstNode(
+            NodePtr substbody = var <= lambda->body->depth
+                              ? new (allocate_node<SubstNode>()) SubstNode(
                                    newdepth+1, lambda->body, var, arg, shift)
-                            : lambda->body;
+                              : lambda->body;
 
             return new (allocate_node<LambdaNode>()) LambdaNode(newdepth, substbody);
         }
         break; case NODETYPE_APPLY: {
-            ApplyNode* apply = (ApplyNode*)body;
+            ApplyNode* apply = body.get_subtype<ApplyNode>();
         
-            Node* newf = var <= apply->f->depth
-                       ? new (allocate_node<SubstNode>()) SubstNode(
-                             newdepth, apply->f, var, arg, shift)
-                       : apply->f;
+            NodePtr newf = var <= apply->f->depth
+                         ? new (allocate_node<SubstNode>()) SubstNode(
+                               newdepth, apply->f, var, arg, shift)
+                         : apply->f;
 
 
-            Node* newx = var <= apply->x->depth
-                       ? new (allocate_node<SubstNode>()) SubstNode(
-                             newdepth, apply->x, var, arg, shift)
-                       : apply->x;
+            NodePtr newx = var <= apply->x->depth
+                         ? new (allocate_node<SubstNode>()) SubstNode(
+                               newdepth, apply->x, var, arg, shift)
+                         : apply->x;
 
             return new (allocate_node<ApplyNode>()) ApplyNode(
                 newdepth, newf, newx);
@@ -243,12 +249,12 @@ public:
         , _old_heap(old_heap)
     { }
 
-    void visit(Node*& node) {
+    void visit(NodePtr& node) {
         node = squash_indirs(node);
-        if (_old_heap->contains(node)) {
+        if (_old_heap->contains(node.get_ptr())) {
             if (node->gc_next == 0) {
                 node->gc_next = *_gc_stack;
-                *_gc_stack = node;
+                *_gc_stack = node.get_ptr();
             }
             work_left = true;
         }
@@ -354,14 +360,14 @@ void NodeMaker::fixup(const RootPtr& ptr) {
     fixup_rec(ptr._ptr, 0);
 }
 
-void NodeMaker::fixup_rec(Node* node, depth_t depth) {
+void NodeMaker::fixup_rec(const NodePtr& node, depth_t depth) {
     if (node->type == NODETYPE_VAR ? node->depth > 0 : node->depth >= 0) {
         return;  // Already converted
     }
 
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
-            LambdaNode* lambda = (LambdaNode*)node;
+            LambdaNode* lambda = node.get_subtype<LambdaNode>();
             fixup_rec(lambda->body, depth+1);
             if (lambda->body->depth == depth+1) {
                 lambda->depth = depth;
@@ -373,7 +379,7 @@ void NodeMaker::fixup_rec(Node* node, depth_t depth) {
             }
         }
         break; case NODETYPE_APPLY: {
-            ApplyNode* apply = (ApplyNode*)node;
+            ApplyNode* apply = node.get_subtype<ApplyNode>();
             fixup_rec(apply->f, depth);
             fixup_rec(apply->x, depth);
             apply->depth = std::max(apply->f->depth, apply->x->depth);

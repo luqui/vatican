@@ -250,19 +250,29 @@ public:
     { }
 
     void visit(NodePtr& node) {
-        node = squash_indirs(node);
-        if (_old_heap->contains(node.get_ptr())) {
-            if (node->gc_next == 0) {
-                node->gc_next = *_gc_stack;
-                *_gc_stack = node.get_ptr();
+        Node* raw_node = follow_indirs(node.get_ptr());
+        if (_old_heap->contains(raw_node)) {
+            if (raw_node->gc_next == 0) {
+                raw_node->gc_next = *_gc_stack;
+                *_gc_stack = raw_node;
             }
             work_left = true;
+        }
+        else {
+            node = NodePtr(raw_node);
         }
     }
 
     bool work_left;
 
 private:
+    Node* follow_indirs(Node* node) {
+        while (node->type == NODETYPE_INDIR) {
+            node = ((IndirNode*)node)->target.get_ptr();
+        }
+        return node;
+    }
+
     Node** _gc_stack;
     Heap* _old_heap;
 };
@@ -301,8 +311,10 @@ void Interp::run_gc() {
             copied->gc_next = 0;
         }
         else {
-            copied = node;
+            // (Except there are no externally allocated things)
+            assert(false);
         }
+        copied->refcount = 0;
         
         // Make the old node an indirection to the new one (if it was copied)
         if (node != copied) {

@@ -1,6 +1,8 @@
 #ifndef __VATICAN_H__
 #define __VATICAN_H__
 
+#include <iostream>
+
 typedef int depth_t;
 typedef unsigned char byte;
 
@@ -46,7 +48,11 @@ struct Node : public GCRef {
 
     virtual size_t size() = 0;
     virtual Node* copy(void* target) = 0;
-    virtual void destroy() = 0;
+    virtual void destroy() {
+        // Unnecessary, but clear the memory for debugging to make sure we
+        // aren't over-freeing.
+        memset((void*)this, 0xbe, sizeof(*this));
+    }
 
     void inc() {
         refcount++;
@@ -137,6 +143,7 @@ struct LambdaNode : Node {
     } 
     void destroy() {
         body = 0;
+        Node::destroy();
     }
 };
 
@@ -165,6 +172,7 @@ struct SubstNode : Node {
     void destroy() {
         body = 0;
         arg = 0;
+        Node::destroy();
     }
 };
 
@@ -192,6 +200,7 @@ struct ApplyNode : Node {
     void destroy() {
         f = 0;
         x = 0;
+        Node::destroy();
     }
 };
 
@@ -205,7 +214,9 @@ struct VarNode : Node {
     Node* copy(void* target) {
         return new (target) VarNode(*this);
     } 
-    void destroy() { }
+    void destroy() {
+        Node::destroy();
+    }
 
 private:
     // It's possible we can use gc_next to indirect to avoid this padding.
@@ -230,6 +241,7 @@ struct IndirNode : Node {
     } 
     void destroy() {
         target = 0;
+        Node::destroy();
     }
 };
 
@@ -244,7 +256,9 @@ struct PrimNode : Node
     Node* copy(void* target) {
         return new (target) PrimNode(*this);
     } 
-    void destroy() { }
+    void destroy() {
+        Node::destroy();
+    }
 
 private:
     padding<sizeof(Node*)> _indir_padding;

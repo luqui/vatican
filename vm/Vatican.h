@@ -1,7 +1,7 @@
 #ifndef __VATICAN_H__
 #define __VATICAN_H__
 
-#include <iostream>
+#include <unordered_map>
 
 typedef int depth_t;
 typedef unsigned char byte;
@@ -148,16 +148,18 @@ struct LambdaNode : Node {
 };
 
 struct SubstNode : Node {
-    SubstNode(depth_t depth, const NodePtr& body, depth_t var, const NodePtr& arg, depth_t shift)
+    SubstNode(depth_t depth, const NodePtr& body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo)
         : Node(NODETYPE_SUBST, false, depth)
         , body(body)
         , arg(arg)
+        , memo(memo)
         , var(var)
         , shift(shift)
     { }
         
     NodePtr body;
     NodePtr arg;
+    std::unordered_map<Node*, NodePtr>* memo;
     depth_t var;
     depth_t shift;
 
@@ -187,7 +189,7 @@ struct ApplyNode : Node {
     NodePtr x;
 
     // This is to make sure we have enough space for the transmogrification
-    padding<2*sizeof(depth_t)> _padding;
+    padding<2*sizeof(depth_t) + sizeof(void*)> _padding;
 
     void visit(NodeVisitor* visitor) {
         visitor->visit(f);
@@ -394,7 +396,8 @@ class Interp {
     NodePtr reduce_whnf_wrapper(const NodePtr& node);
     NodePtr reduce_whnf_rec(NodePtr node);
 
-    NodePtr substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift);
+    NodePtr substitute_memo(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo);
+    NodePtr substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo);
 
     template<class T> 
     void* allocate_node() {

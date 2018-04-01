@@ -124,7 +124,8 @@ void test_fix_idf() {
         show_node(test);
     }
     catch (std::runtime_error& e) {
-        if (std::string(e.what()) == "Out of fuel") {
+        // Perhaps we won't always be able to detect this
+        if (std::string(e.what()) == "Indirection cycle detected") {
             std::cout << "PASS\n";
         }
         else {

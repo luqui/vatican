@@ -36,17 +36,34 @@ void Heap::clear() {
 
 NodePtr squash_indirs(const NodePtr& node) {
     // TODO NodePtrs might be overkill for the traversal here
-    NodePtr end = node;
-    while (end->type == NODETYPE_INDIR) {
-        end = end.get_subtype<IndirNode>()->target;
+    Node* p1 = node.get_ptr();
+    Node* p2 = node.get_ptr();    
+
+    while (p1->type == NODETYPE_INDIR) {
+        p1 = ((IndirNode*)p1)->target.get_ptr();
+        if (p1->type == NODETYPE_INDIR) {
+            p1 = ((IndirNode*)p1)->target.get_ptr();
+        }
+        if (p1->type == NODETYPE_INDIR) {
+            if (p2->type == NODETYPE_INDIR) {
+                p2 = ((IndirNode*)p2)->target.get_ptr();
+            }
+            if (p1 == p2) {
+                throw std::runtime_error("Indirection cycle detected");
+            }
+        }
+        else {
+            break;
+        }
     }
+
     NodePtr iter = node;
     while (iter->type == NODETYPE_INDIR) {
         NodePtr next = iter.get_subtype<IndirNode>()->target;
-        iter.get_subtype<IndirNode>()->target = end;
+        iter.get_subtype<IndirNode>()->target = p1;
         iter = next;
     }
-    return end;
+    return iter;
 }
 
 RootPtr::RootPtr(const RootPtr& const_p) {
@@ -160,14 +177,14 @@ NodePtr Interp::reduce_whnf_rec(NodePtr node) {
             // Assert to make sure the transmogrification is safe.
             assert(sizeof(ApplyNode) >= sizeof(SubstNode));
             new (node.get_ptr()) SubstNode(
-                apply->depth, subst_body, bind_depth, subst_arg, shift);
+                apply->depth, subst_body, bind_depth, subst_arg, shift, new std::unordered_map<Node*, NodePtr>());
             node->refcount = refcount;
             goto REDO;
         }
         break; case NODETYPE_SUBST: {
             SubstNode* subst = node.get_subtype<SubstNode>();
             subst->body = reduce_whnf_wrapper(subst->body);
-            NodePtr substed = substitute(subst->body, subst->var, subst->arg, subst->shift);
+            NodePtr substed = substitute_memo(subst->body, subst->var, subst->arg, subst->shift, subst->memo);
 
             // Make sure the transmogrification is safe.
             int refcount = node->refcount;
@@ -186,7 +203,7 @@ NodePtr Interp::reduce_whnf_rec(NodePtr node) {
     }
 }
 
-NodePtr Interp::substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift) {
+NodePtr Interp::substitute_memo(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo) {
     body = squash_indirs(body);
 
     // If the depth of the body is less than the depth of the variable we are
@@ -195,7 +212,18 @@ NodePtr Interp::substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_
     if (body->depth < var) {
         return body;
     }
+     
+    std::unordered_map<Node*, NodePtr>::iterator i = memo->find(body.get_ptr());
+    if (i != memo->end()) {
+        return i->second;
+    }
+    NodePtr result = substitute(body, var, arg, shift, memo);
+    memo->insert(std::pair<Node*, NodePtr>(body.get_ptr(), result));
 
+    return result;
+}
+
+NodePtr Interp::substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo) {
     depth_t newdepth = body->depth + shift;
     switch (body->type) {
         break; case NODETYPE_VAR: {
@@ -212,7 +240,7 @@ NodePtr Interp::substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_
             
             NodePtr substbody = var <= lambda->body->depth
                               ? new (allocate_node<SubstNode>()) SubstNode(
-                                   newdepth+1, lambda->body, var, arg, shift)
+                                   newdepth+1, lambda->body, var, arg, shift, memo)
                               : lambda->body;
 
             return new (allocate_node<LambdaNode>()) LambdaNode(newdepth, substbody);
@@ -222,13 +250,13 @@ NodePtr Interp::substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_
         
             NodePtr newf = var <= apply->f->depth
                          ? new (allocate_node<SubstNode>()) SubstNode(
-                               newdepth, apply->f, var, arg, shift)
+                               newdepth, apply->f, var, arg, shift, memo)
                          : apply->f;
 
 
             NodePtr newx = var <= apply->x->depth
                          ? new (allocate_node<SubstNode>()) SubstNode(
-                               newdepth, apply->x, var, arg, shift)
+                               newdepth, apply->x, var, arg, shift, memo)
                          : apply->x;
 
             return new (allocate_node<ApplyNode>()) ApplyNode(

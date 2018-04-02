@@ -170,20 +170,24 @@ struct SubstNode : Node {
         visitor->visit(body);
         visitor->visit(arg);
 
-        for (std::unordered_map<Node*, NodePtr>::iterator i = memo->begin(); i != memo->end(); ++i) {
-            if (visitor->alive(i->first)) {
-                visitor->visit(i->second);
+        if (memo) {
+            for (std::unordered_map<Node*, NodePtr>::iterator i = memo->begin(); i != memo->end(); ++i) {
+                if (visitor->alive(i->first)) {
+                    visitor->visit(i->second);
+                }
             }
         }
     }
-    bool needs_cleanup(NodeVisitor* visitor) const { return true; }
+    bool needs_cleanup(NodeVisitor* visitor) const { return !!memo; }
     void cleanup(NodeVisitor* visitor) {
-        for (std::unordered_map<Node*, NodePtr>::iterator i = memo->begin(); i != memo->end();) {
-            std::unordered_map<Node*, NodePtr>::iterator next_i = i;
-            ++next_i;
-            if (!visitor->alive(i->first)) {
-                memo->erase(i);
-                i = next_i;
+        if (memo) {
+            for (std::unordered_map<Node*, NodePtr>::iterator i = memo->begin(); i != memo->end();) {
+                std::unordered_map<Node*, NodePtr>::iterator next_i = i;
+                ++next_i;
+                if (!visitor->alive(i->first)) {
+                    memo->erase(i);
+                    i = next_i;
+                }
             }
         }
     }
@@ -397,7 +401,10 @@ class Interp {
         init(heap_size, fuel);
     }
 
-    virtual ~Interp() { }
+    virtual ~Interp() { 
+        delete _heap;
+        delete _backup_heap;
+    }
 
     // Destructively reduce the node to whnf.  Returns the same node, 
     // possibily with indirections followed.

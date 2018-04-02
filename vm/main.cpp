@@ -1,4 +1,5 @@
 #include <cassert>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <set>
@@ -64,6 +65,8 @@ void show_node(const RootPtr& node) {
     std::cout << "\n";
 }
 
+class test_failure : public std::exception { };
+
 void test_idf() {
     std::cout << "test_idf\n";
 
@@ -81,6 +84,7 @@ void test_idf() {
     else {
         std::cout << "FAIL\n";
         show_node(test);
+        throw test_failure();
     }
 }
 
@@ -99,6 +103,7 @@ void test_loop() {
         // Shouldn't ever get here
         std::cout << "FAIL\n";
         show_node(loop);
+        throw test_failure();
     } 
     catch (std::runtime_error& e) {
         if (std::string(e.what()) == "Out of fuel") {
@@ -122,10 +127,11 @@ void test_fix_idf() {
         test = interp.reduce_whnf(test);
         std::cout << "FAIL\n";
         show_node(test);
+        throw test_failure();
     }
     catch (std::runtime_error& e) {
         // Perhaps we won't always be able to detect this
-        if (std::string(e.what()) == "Indirection cycle detected") {
+        if (std::string(e.what()) == "Indirection cycle detected" || std::string(e.what()) == "Out of fuel") {
             std::cout << "PASS\n";
         }
         else {
@@ -150,6 +156,7 @@ void test_fix_const() {
     else {
         std::cout << "FAIL\n";
         show_node(test);
+        throw test_failure();
     }
 }
 
@@ -188,6 +195,7 @@ void test_scott_tuple() {
     else {
         std::cout << "FAIL\n";
         show_node(resultx);
+        throw test_failure();
     }
 
     RootPtr testy = lib.apply(snd, tup);
@@ -199,6 +207,7 @@ void test_scott_tuple() {
     else {
         std::cout << "FAIL\n";
         show_node(resulty);
+        throw test_failure();
     }
 }
 
@@ -232,7 +241,7 @@ void test_scott_stream(size_t heap_size) {
                 std::cout << "FAIL\n";
                 std::cout << "i = " << i << "\n";
                 show_node(item);
-                return;
+                throw test_failure();
             }
             stream = lib.apply(snd, stream);
             lib.fixup(stream);
@@ -241,7 +250,7 @@ void test_scott_stream(size_t heap_size) {
     catch (std::runtime_error& e) {
         std::cout << "FAIL\n";
         std::cout << e.what() << "\n";
-        return;
+        throw test_failure();
     }
 
     std::cout << "PASS\n";
@@ -301,6 +310,7 @@ void test_heap_resize() {
     else {
         std::cout << "FAIL\n";
         show_node(test);
+        throw test_failure();
     }
 }
 
@@ -338,6 +348,7 @@ void test_cycle_preservation() {
         show_node(stream);
         std::cout << "/=\n";
         show_node(test);
+        throw test_failure();
     }
 }
 

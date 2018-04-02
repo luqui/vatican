@@ -23,6 +23,35 @@ private:
     byte _padding[s];
 };
 
+class Heap {
+  public:
+    Heap(size_t heapsize);
+    virtual ~Heap();
+
+    // Returns 0 if allocation was impossible
+    void* allocate(size_t size);
+
+    // Empties the pool for reuse.
+    void clear();
+
+    bool contains(void* ptr) {
+        return _start <= ptr && ptr < _end;
+    }
+
+    size_t size() const {
+        return _end - _start;
+    }
+
+    size_t allocated() const {
+        return _cur - _start;
+    }
+  private:
+    byte* _start;
+    byte* _cur;
+    byte* _end;
+};
+
+
 class NodeVisitor {
 public:
     virtual ~NodeVisitor() { }
@@ -129,6 +158,129 @@ class NodePtr {
 };
 
 
+class RootPtr : GCRef {
+    friend class Interp;
+    friend class NodeMaker;
+  public:
+    ~RootPtr() {
+        // Remove this node from the rootset
+        _prev->_next = _next;
+        _next->_prev = _prev;
+    }
+
+    RootPtr(const RootPtr& p);
+    
+    RootPtr& operator= (const RootPtr& const_p);
+
+    Node* operator -> () {
+        return _ptr.operator->();
+    }
+    Node* operator -> () const {
+        return _ptr.operator->();
+    }
+
+    void visit(NodeVisitor* visitor) {
+        visitor->visit(_ptr);
+    }
+
+    bool operator == (const RootPtr& other) const {
+        return follow_indirs() == other.follow_indirs();
+    }
+
+    bool operator != (const RootPtr& other) const {
+        return !(*this == other);
+    }
+
+    Node* unsafe_get_ptr() const {
+        return _ptr.get_ptr();
+    }
+
+  private:
+    RootPtr(class Interp* interp, const NodePtr& ptr);
+
+    RootPtr()
+        : _ptr(0)
+        , _next(this)
+        , _prev(this)
+    {
+        // Special constructor for terminal nodes
+        // NOTE THE CYCLE!  We rely on comparison to the edges rather than
+        // comparison to null pointer.  This is to remove conditionals from
+        // the destructor.
+    }
+
+    Node* follow_indirs() const;
+
+    NodePtr _ptr;
+    RootPtr* _next;
+    RootPtr* _prev;
+};
+
+
+const size_t DEFAULT_HEAP_SIZE = 0x100000;  // 1MB
+
+template<class T> class HeapAllocator;
+
+class time_to_gc_exception : public std::exception { };
+
+class Interp {
+    friend class RootPtr;
+    friend class NodeMaker;
+    template<class T> friend class HeapAllocator;
+
+  public:
+    Interp() {
+        init(DEFAULT_HEAP_SIZE, 0); 
+    }
+
+    Interp(size_t heap_size, int fuel) {
+        init(heap_size, fuel);
+    }
+
+    virtual ~Interp() { 
+        delete _heap;
+        delete _backup_heap;
+    }
+
+    // Destructively reduce the node to whnf.  Returns the same node, 
+    // possibily with indirections followed.
+    RootPtr reduce_whnf(const RootPtr& node);
+
+    size_t heap_size() const {
+        return _heap->size();
+    }
+    
+    void run_gc();
+
+  private:
+    Interp(const Interp&);  // No copying
+
+    void init(size_t heap_size, int fuel);
+    
+    NodePtr reduce_whnf_wrapper(const NodePtr& node);
+    NodePtr reduce_whnf_rec(NodePtr node);
+
+    NodePtr substitute_memo(struct SubstNode* subst);
+    NodePtr substitute(struct SubstNode* subst);
+
+    template<class T> 
+    void* allocate_node() {
+        return allocate_node(sizeof(T));
+    }
+    
+    void* allocate_node(size_t size);
+    
+    template<class T> HeapAllocator<T> get_allocator();
+
+    int _fuel;
+    Heap* _heap;
+    Heap* _backup_heap;
+    
+    RootPtr _rootset_front;
+    RootPtr _rootset_back;
+};
+
+
 struct LambdaNode : Node {
     LambdaNode(depth_t depth, const NodePtr& body) 
         : Node(NODETYPE_LAMBDA, true, depth)
@@ -150,8 +302,31 @@ struct LambdaNode : Node {
     }
 };
 
+template<class T>
+class HeapAllocator {
+    template<class U> friend class HeapAllocator;
+  public:
+    typedef T value_type;
+    HeapAllocator(Interp* interp) noexcept : _interp(interp) { }
+    template<class U> HeapAllocator(const HeapAllocator<U>& alloc) noexcept { 
+        _interp = alloc._interp;
+    }
+    T* allocate(size_t n) { return (T*)_interp->allocate_node(sizeof(T)*n); }
+    void deallocate(T* p, size_t n) { }
+  private:
+    Interp* _interp;
+};
+
+template<class T>
+HeapAllocator<T> Interp::get_allocator() {
+    return HeapAllocator<T>(this);
+};
+
+typedef std::unordered_map<Node*, NodePtr, std::hash<Node*>, std::equal_to<Node*>, HeapAllocator<std::pair<Node* const, NodePtr> > > memo_table_t;
+
+
 struct SubstNode : Node {
-    SubstNode(depth_t depth, const NodePtr& body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo)
+    SubstNode(depth_t depth, const NodePtr& body, depth_t var, const NodePtr& arg, depth_t shift, memo_table_t* memo)
         : Node(NODETYPE_SUBST, false, depth)
         , body(body)
         , arg(arg)
@@ -162,7 +337,7 @@ struct SubstNode : Node {
         
     NodePtr body;
     NodePtr arg;
-    std::unordered_map<Node*, NodePtr>* memo;
+    memo_table_t* memo;
     depth_t var;
     depth_t shift;
 
@@ -194,7 +369,9 @@ struct SubstNode : Node {
     
     size_t size() { return sizeof(SubstNode); }
     Node* copy(void* target) {
-        return new (target) SubstNode(*this);
+        SubstNode* ret = new (target) SubstNode(*this);
+        ret->memo = new memo_table_t(memo->get_allocator());
+        return ret;
     }
     void destroy() {
         body = 0;
@@ -292,156 +469,6 @@ private:
 };
 
 
-class Heap {
-  public:
-    Heap(size_t heapsize);
-    virtual ~Heap();
-
-    // Returns 0 if allocation was impossible
-    void* allocate(size_t size);
-
-    // Empties the pool for reuse.
-    void clear();
-
-    bool contains(void* ptr) {
-        return _start <= ptr && ptr < _end;
-    }
-
-    size_t size() const {
-        return _end - _start;
-    }
-
-    size_t allocated() const {
-        return _cur - _start;
-    }
-  private:
-    byte* _start;
-    byte* _cur;
-    byte* _end;
-};
-
-
-class RootPtr : GCRef {
-    friend class Interp;
-    friend class NodeMaker;
-  public:
-    ~RootPtr() {
-        // Remove this node from the rootset
-        _prev->_next = _next;
-        _next->_prev = _prev;
-    }
-
-    RootPtr(const RootPtr& p);
-    
-    RootPtr& operator= (const RootPtr& const_p);
-
-    Node* operator -> () {
-        return _ptr.operator->();
-    }
-    Node* operator -> () const {
-        return _ptr.operator->();
-    }
-
-    void visit(NodeVisitor* visitor) {
-        visitor->visit(_ptr);
-    }
-
-    bool operator == (const RootPtr& other) const {
-        return follow_indirs() == other.follow_indirs();
-    }
-
-    bool operator != (const RootPtr& other) const {
-        return !(*this == other);
-    }
-
-    Node* unsafe_get_ptr() const {
-        return _ptr.get_ptr();
-    }
-
-  private:
-    RootPtr(class Interp* interp, const NodePtr& ptr);
-
-    RootPtr()
-        : _ptr(0)
-        , _next(this)
-        , _prev(this)
-    {
-        // Special constructor for terminal nodes
-        // NOTE THE CYCLE!  We rely on comparison to the edges rather than
-        // comparison to null pointer.  This is to remove conditionals from
-        // the destructor.
-    }
-
-    Node* follow_indirs() const {
-        Node* r = _ptr.get_ptr();
-        while (r->type == NODETYPE_INDIR) {
-            r = ((IndirNode*)r)->target.get_ptr();
-        }
-        return r;
-    }
-
-    NodePtr _ptr;
-    RootPtr* _next;
-    RootPtr* _prev;
-};
-
-
-const size_t DEFAULT_HEAP_SIZE = 0x100000;  // 1MB
-
-class Interp {
-    friend class RootPtr;
-    friend class NodeMaker;
-
-  public:
-    Interp() {
-        init(DEFAULT_HEAP_SIZE, 0); 
-    }
-
-    Interp(size_t heap_size, int fuel) {
-        init(heap_size, fuel);
-    }
-
-    virtual ~Interp() { 
-        delete _heap;
-        delete _backup_heap;
-    }
-
-    // Destructively reduce the node to whnf.  Returns the same node, 
-    // possibily with indirections followed.
-    RootPtr reduce_whnf(const RootPtr& node);
-
-    size_t heap_size() const {
-        return _heap->size();
-    }
-    
-    void run_gc();
-
-  private:
-    Interp(const Interp&);  // No copying
-
-    void init(size_t heap_size, int fuel);
-    
-    NodePtr reduce_whnf_wrapper(const NodePtr& node);
-    NodePtr reduce_whnf_rec(NodePtr node);
-
-    NodePtr substitute_memo(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo);
-    NodePtr substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo);
-
-    template<class T> 
-    void* allocate_node() {
-        return allocate_node(sizeof(T));
-    }
-    
-    void* allocate_node(size_t size);
-
-    int _fuel;
-    Heap* _heap;
-    Heap* _backup_heap;
-    
-    RootPtr _rootset_front;
-    RootPtr _rootset_back;
-};
-
 
 class NodeMaker {
   public:
@@ -450,35 +477,65 @@ class NodeMaker {
     // To build nodes for testing, we pun and use var depth as a de bruijn
     // index, then postprocess it into the correct depth form.
     RootPtr lambda(const RootPtr& body) {
-        return RootPtr(_interp,
-            new (_interp->allocate_node<LambdaNode>()) LambdaNode(-1, body._ptr));
+        try {
+            return RootPtr(_interp,
+                new (_interp->allocate_node<LambdaNode>()) LambdaNode(-1, body._ptr));
+        }
+        catch (time_to_gc_exception& e) {
+            _interp->run_gc();
+            return lambda(body);
+        }
     }
     RootPtr apply(const RootPtr& f, const RootPtr& x) {
-        return RootPtr(_interp,
-            new (_interp->allocate_node<ApplyNode>()) ApplyNode(-1, f._ptr, x._ptr));
+        try {
+            return RootPtr(_interp,
+                new (_interp->allocate_node<ApplyNode>()) ApplyNode(-1, f._ptr, x._ptr));
+        }
+        catch (time_to_gc_exception& e) {
+            _interp->run_gc();
+            return apply(f, x);
+        }
     }
     RootPtr var(int debruijn) {
-        // We use negative to indicate a debruijn index, because if the graph has
-        // sharing it is possible to traverse nodes twice.  A variable's depth is
-        // always strictly positive so there is no overlap at 0.
-        return RootPtr(_interp,
-            new (_interp->allocate_node<VarNode>()) VarNode(-debruijn));
+        try {
+            // We use negative to indicate a debruijn index, because if the graph has
+            // sharing it is possible to traverse nodes twice.  A variable's depth is
+            // always strictly positive so there is no overlap at 0.
+            return RootPtr(_interp,
+                new (_interp->allocate_node<VarNode>()) VarNode(-debruijn));
+        }
+        catch (time_to_gc_exception& e) {
+            _interp->run_gc();
+            return var(debruijn);
+        }
     }
 
     RootPtr prim() {
-        return RootPtr(_interp, new (_interp->allocate_node<PrimNode>()) PrimNode());
+        try {
+            return RootPtr(_interp, new (_interp->allocate_node<PrimNode>()) PrimNode());
+        }
+        catch (time_to_gc_exception& e) {
+            _interp->run_gc();
+            return prim();
+        }
     }
 
     RootPtr fix() {
-        NodePtr var = new (_interp->allocate_node<VarNode>()) VarNode(1);
-        NodePtr body = new (_interp->allocate_node<ApplyNode>()) ApplyNode(1, var, 0);
-        var->inc();
+        try {
+            NodePtr var = new (_interp->allocate_node<VarNode>()) VarNode(1);
+            NodePtr body = new (_interp->allocate_node<ApplyNode>()) ApplyNode(1, var, 0);
+            var->inc();
 
-        body.get_subtype<ApplyNode>()->x = body;
-        body->inc();
-        NodePtr lambda = new (_interp->allocate_node<LambdaNode>()) LambdaNode(0, body);
-        body->inc();
-        return RootPtr(_interp, lambda);
+            body.get_subtype<ApplyNode>()->x = body;
+            body->inc();
+            NodePtr lambda = new (_interp->allocate_node<LambdaNode>()) LambdaNode(0, body);
+            body->inc();
+            return RootPtr(_interp, lambda);
+        }
+        catch (time_to_gc_exception& e) {
+            _interp->run_gc();
+            return prim();
+        }
     }
 
     // NOTE WELL -- DAGness in debruijn graphs can be tricky if you allow terms

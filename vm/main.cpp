@@ -233,7 +233,7 @@ void test_scott_stream(size_t heap_size) {
     lib.fixup(stream);
 
     try {
-        for (int i = 0; i < 100; i++) {{
+        for (int i = 0; i < 100; i++) {
             RootPtr item = lib.apply(fst, stream);
             lib.fixup(item);
             item = interp.reduce_whnf(item);
@@ -245,7 +245,7 @@ void test_scott_stream(size_t heap_size) {
             }
             stream = lib.apply(snd, stream);
             lib.fixup(stream);
-        }}
+        }
     }
     catch (std::runtime_error& e) {
         std::cout << "FAIL\n";

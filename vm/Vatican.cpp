@@ -3,6 +3,7 @@
 #include <cstring>
 #include <new>
 #include <stdexcept>
+#include <iostream>
 
 #include "Vatican.h"
 
@@ -99,7 +100,13 @@ RootPtr::RootPtr(Interp* interp, const NodePtr& ptr)
     _ptr->inc();
 }
 
-class time_to_gc_exception : public std::exception { };
+Node* RootPtr::follow_indirs() const {
+    Node* r = _ptr.get_ptr();
+    while (r->type == NODETYPE_INDIR) {
+        r = ((IndirNode*)r)->target.get_ptr();
+    }
+    return r;
+}
 
 void Interp::init(size_t heap_size, int fuel) {
     _heap = new Heap(heap_size);
@@ -177,14 +184,14 @@ NodePtr Interp::reduce_whnf_rec(NodePtr node) {
             // Assert to make sure the transmogrification is safe.
             assert(sizeof(ApplyNode) >= sizeof(SubstNode));
             new (node.get_ptr()) SubstNode(
-                apply->depth, subst_body, bind_depth, subst_arg, shift, new std::unordered_map<Node*, NodePtr>());
+                apply->depth, subst_body, bind_depth, subst_arg, shift, new (allocate_node<memo_table_t>()) memo_table_t(get_allocator<std::pair<Node* const, NodePtr> >()));
             node->refcount = refcount;
             goto REDO;
         }
         break; case NODETYPE_SUBST: {
             SubstNode* subst = node.get_subtype<SubstNode>();
             subst->body = reduce_whnf_wrapper(subst->body);
-            NodePtr substed = substitute_memo(subst->body, subst->var, subst->arg, subst->shift, subst->memo);
+            NodePtr substed = substitute_memo(subst);
 
             // Make sure the transmogrification is safe.
             int refcount = node->refcount;
@@ -203,67 +210,65 @@ NodePtr Interp::reduce_whnf_rec(NodePtr node) {
     }
 }
 
-NodePtr Interp::substitute_memo(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo) {
-    body = squash_indirs(body);
-
+NodePtr Interp::substitute_memo(SubstNode* subst) {
     // If the depth of the body is less than the depth of the variable we are
     // substituting, the variable cannot possibly occur in the body, so just
     // dissolve away.
-    if (body->depth < var) {
-        return body;
+    if (subst->body->depth < subst->var) {
+        return subst->body;
     }
      
-    std::unordered_map<Node*, NodePtr>::iterator i = memo->find(body.get_ptr());
-    if (i != memo->end()) {
+    memo_table_t::iterator i = subst->memo->find(subst->body.get_ptr());
+    if (i != subst->memo->end()) {
         return i->second;
     }
-    NodePtr result = substitute(body, var, arg, shift, memo);
-    memo->insert(std::pair<Node*, NodePtr>(body.get_ptr(), result));
+    NodePtr result = substitute(subst);
+    subst->memo->insert(std::pair<Node*, NodePtr>(subst->body.get_ptr(), result));
 
     return result;
 }
 
-NodePtr Interp::substitute(NodePtr body, depth_t var, const NodePtr& arg, depth_t shift, std::unordered_map<Node*, NodePtr>* memo) {
-    depth_t newdepth = body->depth + shift;
-    switch (body->type) {
+NodePtr Interp::substitute(SubstNode* subst) {
+    depth_t newdepth = subst->body->depth + subst->shift;
+    switch (subst->body->type) {
         break; case NODETYPE_VAR: {
-            VarNode* varnode = body.get_subtype<VarNode>();
-            if (varnode->depth == var) {
-                return arg;
+            VarNode* varnode = subst->body.get_subtype<VarNode>();
+            if (varnode->depth == subst->var) {
+                return subst->arg;
             }
             else {
                 return new (allocate_node<VarNode>()) VarNode(newdepth);
             }
         }
         break; case NODETYPE_LAMBDA: {
-            LambdaNode* lambda = body.get_subtype<LambdaNode>();
+            LambdaNode* lambda = subst->body.get_subtype<LambdaNode>();
             
-            NodePtr substbody = var <= lambda->body->depth
+            NodePtr substbody = subst->var <= lambda->body->depth
                               ? new (allocate_node<SubstNode>()) SubstNode(
-                                   newdepth+1, lambda->body, var, arg, shift, memo)
+                                   newdepth+1, lambda->body, subst->var, subst->arg, subst->shift, subst->memo)
                               : lambda->body;
 
             return new (allocate_node<LambdaNode>()) LambdaNode(newdepth, substbody);
         }
         break; case NODETYPE_APPLY: {
-            ApplyNode* apply = body.get_subtype<ApplyNode>();
+            ApplyNode* apply = subst->body.get_subtype<ApplyNode>();
         
-            NodePtr newf = var <= apply->f->depth
+            NodePtr newf = subst->var <= apply->f->depth
                          ? new (allocate_node<SubstNode>()) SubstNode(
-                               newdepth, apply->f, var, arg, shift, memo)
+                               newdepth, apply->f, subst->var, subst->arg, subst->shift, subst->memo)
                          : apply->f;
 
 
-            NodePtr newx = var <= apply->x->depth
+            NodePtr newx = subst->var <= apply->x->depth
                          ? new (allocate_node<SubstNode>()) SubstNode(
-                               newdepth, apply->x, var, arg, shift, memo)
+                               newdepth, apply->x, subst->var, subst->arg, subst->shift, subst->memo)
                          : apply->x;
 
             return new (allocate_node<ApplyNode>()) ApplyNode(
                 newdepth, newf, newx);
         }
         break; default: {
-            return body;
+            return subst->body;
         }
     }
 }

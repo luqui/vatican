@@ -1,5 +1,5 @@
 HFILES = Vatican.h Makefile
-CXXFLAGS = -g -Wall
+CXXFLAGS = -std=c++11 -g -Wall
 OFILES = main.o Vatican.o
 
 %.o: %.cpp $(HFILES)

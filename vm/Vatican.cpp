@@ -31,7 +31,7 @@ void Heap::clear() {
     _cur = _start;
 
     // We clear it for now to catch any bugs faster.
-    memset(_start, 0xbf, size());
+    memset(_start, 0xbe, size());
 }
 
 
@@ -184,7 +184,8 @@ NodePtr Interp::reduce_whnf_rec(NodePtr node) {
             // Assert to make sure the transmogrification is safe.
             assert(sizeof(ApplyNode) >= sizeof(SubstNode));
             new (node.get_ptr()) SubstNode(
-                apply->depth, subst_body, bind_depth, subst_arg, shift, new (allocate_node<memo_table_t>()) memo_table_t(get_allocator<std::pair<Node* const, NodePtr> >()));
+                apply->depth, subst_body, bind_depth, subst_arg, shift, 
+                new (allocate_node<memo_table_t>()) memo_table_t(get_allocator<memo_table_t::value_type>()));
             node->refcount = refcount;
             goto REDO;
         }

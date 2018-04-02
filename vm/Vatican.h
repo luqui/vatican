@@ -311,7 +311,12 @@ class HeapAllocator {
     template<class U> HeapAllocator(const HeapAllocator<U>& alloc) noexcept { 
         _interp = alloc._interp;
     }
-    T* allocate(size_t n) { return (T*)_interp->allocate_node(sizeof(T)*n); }
+    T* allocate(size_t n) {
+        return (T*)_interp->allocate_node(sizeof(T)*n); 
+    }
+    void* allocate_bytes(size_t n) {
+        return _interp->allocate_node(n);
+    }
     void deallocate(T* p, size_t n) { }
   private:
     Interp* _interp;
@@ -322,7 +327,7 @@ HeapAllocator<T> Interp::get_allocator() {
     return HeapAllocator<T>(this);
 };
 
-typedef std::unordered_map<Node*, NodePtr, std::hash<Node*>, std::equal_to<Node*>, HeapAllocator<std::pair<Node* const, NodePtr> > > memo_table_t;
+typedef std::unordered_map<Node*, NodePtr, std::hash<Node*>, std::equal_to<Node*>, HeapAllocator<std::pair<Node* const, NodePtr>>> memo_table_t;
 
 
 struct SubstNode : Node {
@@ -370,7 +375,7 @@ struct SubstNode : Node {
     size_t size() { return sizeof(SubstNode); }
     Node* copy(void* target) {
         SubstNode* ret = new (target) SubstNode(*this);
-        ret->memo = new memo_table_t(memo->get_allocator());
+        ret->memo = new (memo->get_allocator().allocate_bytes(sizeof(memo_table_t))) memo_table_t(memo->get_allocator());
         return ret;
     }
     void destroy() {

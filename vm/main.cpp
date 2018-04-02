@@ -5,27 +5,29 @@
 #include <set>
 #include "Vatican.h"
 
-void show_node_rec(const NodePtr& node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
-    if (seen.find(node.get_ptr()) != seen.end()) {
+void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
+    if (seen.find(node) != seen.end()) {
         std::cout << "LOOP";
         return;
     }
-    seen.insert(node.get_ptr());
+    seen.insert(node);
+
+    std::cout << node->refcount << "{";
 
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
-            LambdaNode* lambda = node.get_subtype<LambdaNode>();
+            LambdaNode* lambda = (LambdaNode*)node;
             if (lambda_parens) { std::cout << "("; }
             std::cout << "\\[" << lambda->depth+1 << "]. ";
-            show_node_rec(lambda->body, false, false, seen);
+            show_node_rec(lambda->body.get_ptr(), false, false, seen);
             if (lambda_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_APPLY: {
-            ApplyNode* apply = node.get_subtype<ApplyNode>();
+            ApplyNode* apply = (ApplyNode*)node;
             if (apply_parens) { std::cout << "("; }
-            show_node_rec(apply->f, true, false, seen);
+            show_node_rec(apply->f.get_ptr(), true, false, seen);
             std::cout << " ";
-            show_node_rec(apply->x, true, true, seen);
+            show_node_rec(apply->x.get_ptr(), true, true, seen);
             if (apply_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_VAR: {
@@ -35,22 +37,23 @@ void show_node_rec(const NodePtr& node, bool lambda_parens, bool apply_parens, s
             std::cout << "PRIM";
         }
         break; case NODETYPE_SUBST: {
-            SubstNode* subst = node.get_subtype<SubstNode>();
+            SubstNode* subst = (SubstNode*)node;
             std::cout << "(";
-            show_node_rec(subst->body, true, true, seen);
+            show_node_rec(subst->body.get_ptr(), true, true, seen);
             std::cout << " @[ " << subst->var << " | " << subst->shift << " ] ";
-            show_node_rec(subst->arg, true, true, seen);
+            show_node_rec(subst->arg.get_ptr(), true, true, seen);
             std::cout << ")";
         }
         break; case NODETYPE_INDIR: {
-            IndirNode* indir = node.get_subtype<IndirNode>();
+            IndirNode* indir = (IndirNode*)node;
             std::cout << "!";
-            show_node_rec(indir->target, true, true, seen);
+            show_node_rec(indir->target.get_ptr(), true, true, seen);
         }
         break; default: {
             assert(false);
         }
     }
+    std::cout << node->refcount << "{";
 }
 
 void inspect(Node* node) {
@@ -264,6 +267,10 @@ void test_heap_resize() {
     Interp interp(heap_size, 0);
     NodeMaker lib(&interp);
 
+    RootPtr test = lib.prim();
+    RootPtr arg = lib.prim();
+
+    {
     RootPtr idf = lib.lambda(lib.var(0));
     lib.fixup(idf);
 
@@ -296,14 +303,16 @@ void test_heap_resize() {
     RootPtr thousand = lib.apply(lib.apply(times, lib.apply(lib.apply(times, ten), ten)), ten);
     lib.fixup(thousand);
 
-    RootPtr arg = lib.prim();
+    arg = lib.prim();
     lib.fixup(arg);
 
     // thousand idf (thousand idf prim)
-    RootPtr test = lib.apply(lib.apply(thousand, idf), lib.apply(lib.apply(thousand, idf), arg));
+    test = lib.apply(lib.apply(thousand, idf), lib.apply(lib.apply(thousand, idf), arg));
     lib.fixup(test);
-
+    }
+    show_node(test);
     test = interp.reduce_whnf(test);
+    show_node(test);
     if (test == arg && interp.heap_size() > heap_size) {  // if the heap didn't grow, we need to alter the test
         std::cout << "PASS\n";
     }

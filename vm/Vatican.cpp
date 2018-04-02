@@ -7,6 +7,8 @@
 
 #include "Vatican.h"
 
+int NODE_ID = 0;
+
 Heap::Heap(size_t heapsize) {
     _start = _cur = new byte[heapsize];
     _end = _start + heapsize;
@@ -85,7 +87,6 @@ RootPtr::RootPtr(const RootPtr& const_p) {
 RootPtr& RootPtr::operator= (const RootPtr& p)
 {
     _ptr = p._ptr;
-    _ptr->inc();
     return *this;
 }
 
@@ -97,7 +98,6 @@ RootPtr::RootPtr(Interp* interp, const NodePtr& ptr)
     _prev = interp->_rootset_back._prev;
     interp->_rootset_back._prev->_next = this;
     interp->_rootset_back._prev = this;
-    _ptr->inc();
 }
 
 Node* RootPtr::follow_indirs() const {
@@ -173,6 +173,7 @@ NodePtr Interp::reduce_whnf_rec(NodePtr node) {
                 return node;
             }
             
+            depth_t apply_depth = apply->depth;
             depth_t bind_depth = apply->f->depth + 1;
             depth_t shift = apply->depth - bind_depth;
 
@@ -182,10 +183,11 @@ NodePtr Interp::reduce_whnf_rec(NodePtr node) {
             int refcount = node->refcount;
             // NB this overwrites node!
             // Assert to make sure the transmogrification is safe.
+            memo_table_t* memo = new (allocate_node<memo_table_t>()) memo_table_t(get_allocator<memo_table_t::value_type>());
+            node->destroy();
             assert(sizeof(ApplyNode) >= sizeof(SubstNode));
             new (node.get_ptr()) SubstNode(
-                apply->depth, subst_body, bind_depth, subst_arg, shift, 
-                new (allocate_node<memo_table_t>()) memo_table_t(get_allocator<memo_table_t::value_type>()));
+                apply_depth, subst_body, bind_depth, subst_arg, shift, memo);
             node->refcount = refcount;
             goto REDO;
         }
@@ -193,10 +195,12 @@ NodePtr Interp::reduce_whnf_rec(NodePtr node) {
             SubstNode* subst = node.get_subtype<SubstNode>();
             subst->body = reduce_whnf_wrapper(subst->body);
             NodePtr substed = substitute_memo(subst);
+    
 
             // Make sure the transmogrification is safe.
             int refcount = node->refcount;
             assert(sizeof(SubstNode) >= sizeof(IndirNode));
+            node->destroy();
             new (node.get_ptr()) IndirNode(substed);
             node->refcount = refcount;
             goto REDO;
@@ -224,7 +228,14 @@ NodePtr Interp::substitute_memo(SubstNode* subst) {
         return i->second;
     }
     NodePtr result = substitute(subst);
-    subst->memo->insert(std::pair<Node*, NodePtr>(subst->body.get_ptr(), result));
+    int refcount = subst->body->refcount;
+    if (refcount > 1) {
+        std::cout << "Memo " << refcount << ", size " << subst->memo->size() << "\n";
+        subst->memo->insert(std::pair<Node*, NodePtr>(subst->body.get_ptr(), result));
+    }
+    else {
+        std::cout << "Skipped\n";
+    }
 
     return result;
 }
@@ -284,16 +295,14 @@ public:
     { }
 
     void visit(NodePtr& node) {
-        Node* raw_node = follow_indirs(node.get_ptr());
-        if (_old_heap->contains(raw_node)) {
-            if (raw_node->gc_next == 0) {
-                raw_node->gc_next = *_gc_stack;
-                *_gc_stack = raw_node;
+        node = follow_indirs(node.get_ptr());
+        assert(0 <= node->type && node->type < NODETYPE_MAX);
+        if (_old_heap->contains(node.get_ptr())) {
+            if (node->gc_next == 0) {
+                node->gc_next = *_gc_stack;
+                *_gc_stack = node.get_ptr();
             }
             work_left = true;
-        }
-        else {
-            node = NodePtr(raw_node);
         }
     }
 

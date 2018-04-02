@@ -7,15 +7,6 @@ typedef int depth_t;
 typedef unsigned char byte;
 
 struct Node;
-enum NodeType 
-    { NODETYPE_LAMBDA
-    , NODETYPE_APPLY
-    , NODETYPE_SUBST
-    , NODETYPE_VAR
-    , NODETYPE_INDIR
-    , NODETYPE_PRIM
-    , NODETYPE_MAX
-    };
 
 template<size_t s>
 class padding {
@@ -67,15 +58,30 @@ public:
     virtual void cleanup(NodeVisitor* visitor) { }
 };
 
+enum NodeType 
+    { NODETYPE_LAMBDA
+    , NODETYPE_APPLY
+    , NODETYPE_SUBST
+    , NODETYPE_VAR
+    , NODETYPE_INDIR
+    , NODETYPE_PRIM
+    , NODETYPE_MAX
+    };
+
+extern int NODE_ID;
+
 struct Node : public GCRef {
     Node(NodeType type, bool blocked, depth_t depth) 
         : gc_next(0), depth(depth), blocked(blocked), refcount(0), type(type)
-    { }
+    {
+        node_id = NODE_ID++;
+    }
 
     Node* gc_next;
     depth_t depth;
     bool blocked;
     int refcount;
+    int node_id;
     NodeType type;
 
     virtual size_t size() = 0;
@@ -83,7 +89,7 @@ struct Node : public GCRef {
     virtual void destroy() {
         // Unnecessary, but clear the memory for debugging to make sure we
         // aren't over-freeing.
-        memset((void*)this, 0xbe, sizeof(*this));
+        memset((void*)this, 0xbf, sizeof(*this));
     }
 
     void inc() {
@@ -120,24 +126,26 @@ class NodePtr {
 
     NodePtr& operator= (const NodePtr& p) {
         if (p._ptr == _ptr) return *this;
-        if (_ptr) {
-            _ptr->dec();
-        }
+        Node* old_ptr = _ptr;
         _ptr = p._ptr;
         if (_ptr) {
             _ptr->inc();
+        }
+        if (old_ptr) {
+            old_ptr->dec();
         }
         return *this;
     }
 
     NodePtr& operator= (Node* node) {
         if (_ptr == node) return *this;
-        if (_ptr) {
-            _ptr->dec();
-        }
+        Node* old_ptr = _ptr;
         _ptr = node;
         if (_ptr) {
             _ptr->inc();
+        }
+        if (old_ptr) {
+            old_ptr->dec();
         }
         return *this;
     }
@@ -529,12 +537,9 @@ class NodeMaker {
         try {
             NodePtr var = new (_interp->allocate_node<VarNode>()) VarNode(1);
             NodePtr body = new (_interp->allocate_node<ApplyNode>()) ApplyNode(1, var, 0);
-            var->inc();
 
             body.get_subtype<ApplyNode>()->x = body;
-            body->inc();
             NodePtr lambda = new (_interp->allocate_node<LambdaNode>()) LambdaNode(0, body);
-            body->inc();
             return RootPtr(_interp, lambda);
         }
         catch (time_to_gc_exception& e) {

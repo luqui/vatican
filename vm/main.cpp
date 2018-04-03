@@ -13,7 +13,6 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
     seen.insert(node);
 
     std::cout << node->refcount << "{";
-
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
             LambdaNode* lambda = (LambdaNode*)node;
@@ -53,7 +52,7 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
             assert(false);
         }
     }
-    std::cout << node->refcount << "{";
+    std::cout << "}";
 }
 
 void inspect(Node* node) {
@@ -288,16 +287,16 @@ void test_heap_resize() {
 
     // λf x. f (f (f (f (f (f (f (f (f (f x)))))))))
     RootPtr ten = lib.lambda(lib.lambda(
-        lib.apply(lib.var(1),
-        lib.apply(lib.var(1),
-        lib.apply(lib.var(1),
-        lib.apply(lib.var(1),
-        lib.apply(lib.var(1),
-        lib.apply(lib.var(1),
-        lib.apply(lib.var(1),
-        lib.apply(lib.var(1),
-        lib.apply(lib.var(1),
-        lib.apply(lib.var(1), lib.var(0)))))))))))));
+          //lib.apply(lib.var(1),
+          //lib.apply(lib.var(1),
+          //lib.apply(lib.var(1),
+          //lib.apply(lib.var(1),
+          //lib.apply(lib.var(1),
+          //lib.apply(lib.var(1),
+          //lib.apply(lib.var(1),
+          //lib.apply(lib.var(1),
+          //lib.apply(lib.var(1),
+          lib.apply(lib.var(1), lib.var(0))));//)))))))));
     lib.fixup(ten);
     
     RootPtr thousand = lib.apply(lib.apply(times, lib.apply(lib.apply(times, ten), ten)), ten);
@@ -311,16 +310,24 @@ void test_heap_resize() {
     lib.fixup(test);
     }
     show_node(test);
+    show_node(arg);
+    int arg_refcount = arg->refcount;
     test = interp.reduce_whnf(test);
     show_node(test);
-    if (test == arg && interp.heap_size() > heap_size) {  // if the heap didn't grow, we need to alter the test
-        std::cout << "PASS\n";
-    }
-    else {
-        std::cout << "FAIL\n";
+    if (test != arg) {
+        std::cout << "FAIL - incorrect output\n";
         show_node(test);
         throw test_failure();
     }
+    if (!(interp.heap_size() > heap_size)) {
+        std::cout << "FAIL - heap did not grow\n";
+        throw test_failure();
+    }
+    if (test->refcount != arg_refcount) {
+        std::cout << "FAIL - reference count mismatch (" << arg_refcount << " -> " << test->refcount << ")\n";
+        throw test_failure();
+    }
+    std::cout << "PASS\n";
 }
 
 void test_cycle_preservation() {

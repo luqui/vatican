@@ -2,6 +2,7 @@
 #define __VATICAN_H__
 
 #include <unordered_map>
+#include <set>
 
 typedef int depth_t;
 typedef unsigned char byte;
@@ -94,6 +95,10 @@ struct Node : public GCRef {
 
     void inc() {
         refcount++;
+        if (node_id == 20890) {
+            refcount--;
+            refcount++;
+        }
     }
     void dec() {
         refcount--;
@@ -265,8 +270,8 @@ class Interp {
 
     void init(size_t heap_size, int fuel);
     
-    NodePtr reduce_whnf_wrapper(const NodePtr& node);
-    NodePtr reduce_whnf_rec(NodePtr node);
+    void reduce_whnf_wrapper(NodePtr& node);
+    void reduce_whnf_rec(NodePtr& node);
 
     NodePtr substitute_memo(struct SubstNode* subst);
     NodePtr substitute(struct SubstNode* subst);
@@ -437,7 +442,7 @@ struct VarNode : Node {
 
 private:
     // It's possible we can use gc_next to indirect to avoid this padding.
-    Node* _indir_padding;
+    padding<sizeof(NodePtr)> _indir_padding;
 };
 
 struct IndirNode : Node {
@@ -478,7 +483,7 @@ struct PrimNode : Node
     }
 
 private:
-    padding<sizeof(Node*)> _indir_padding;
+    padding<sizeof(NodePtr)> _indir_padding;
 };
 
 

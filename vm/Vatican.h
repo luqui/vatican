@@ -95,10 +95,6 @@ struct Node : public GCRef {
 
     void inc() {
         refcount++;
-        if (node_id == 20890) {
-            refcount--;
-            refcount++;
-        }
     }
     void dec() {
         refcount--;
@@ -388,7 +384,7 @@ struct SubstNode : Node {
     size_t size() { return sizeof(SubstNode); }
     Node* copy(void* target) {
         SubstNode* ret = new (target) SubstNode(*this);
-        ret->memo = new (memo->get_allocator().allocate_bytes(sizeof(memo_table_t))) memo_table_t(memo->get_allocator());
+        ret->memo = new (memo->get_allocator().allocate_bytes(sizeof(memo_table_t))) memo_table_t(*memo, memo->get_allocator());
         return ret;
     }
     void destroy() {

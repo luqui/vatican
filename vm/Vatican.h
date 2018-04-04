@@ -2,10 +2,10 @@
 #define __VATICAN_H__
 
 #include <unordered_map>
-#include <set>
+
+#include "GC.h"
 
 typedef int depth_t;
-typedef unsigned char byte;
 
 struct Node;
 
@@ -15,49 +15,6 @@ private:
     byte _padding[s];
 };
 
-class Heap {
-  public:
-    Heap(size_t heapsize);
-    virtual ~Heap();
-
-    // Returns 0 if allocation was impossible
-    void* allocate(size_t size);
-
-    // Empties the pool for reuse.
-    void clear();
-
-    bool contains(void* ptr) {
-        return _start <= ptr && ptr < _end;
-    }
-
-    size_t size() const {
-        return _end - _start;
-    }
-
-    size_t allocated() const {
-        return _cur - _start;
-    }
-  private:
-    byte* _start;
-    byte* _cur;
-    byte* _end;
-};
-
-
-class NodeVisitor {
-public:
-    virtual ~NodeVisitor() { }
-    virtual void visit(class NodePtr&) = 0;
-    virtual bool alive(Node*) const = 0;
-};
-
-class GCRef {
-public:
-    virtual ~GCRef() { }
-    virtual void visit(NodeVisitor* visitor) = 0;
-    virtual bool needs_cleanup(NodeVisitor* visitor) const { return false; }
-    virtual void cleanup(NodeVisitor* visitor) { }
-};
 
 enum NodeType 
     { NODETYPE_LAMBDA
@@ -69,105 +26,23 @@ enum NodeType
     , NODETYPE_MAX
     };
 
-extern int NODE_ID;
-
 struct Node : public GCRef {
     Node(NodeType type, bool blocked, depth_t depth) 
-        : gc_next(0), depth(depth), blocked(blocked), refcount(0), type(type)
-    {
-        node_id = NODE_ID++;
-    }
+        : depth(depth), blocked(blocked), type(type)
+    { }
 
-    Node* gc_next;
+    // This is a typesig change -- if you follow indirs on a node, you get
+    // a node again.
+    Node* follow_indir() { return this; }
+
     depth_t depth;
     bool blocked;
-    int refcount;
-    int node_id;
     NodeType type;
-
-    virtual size_t size() = 0;
-    virtual Node* copy(void* target) = 0;
-    virtual void destroy() {
-        // Unnecessary, but clear the memory for debugging to make sure we
-        // aren't over-freeing.
-        memset((void*)this, 0xbf, sizeof(*this));
-    }
-
-    void inc() {
-        refcount++;
-    }
-    void dec() {
-        refcount--;
-        if (refcount == 0) {
-            destroy();
-        }
-    }
 };
 
-class NodePtr {
-  public:
-    NodePtr() : _ptr(0) { }
-    
-    NodePtr(Node* node) : _ptr(node) {
-        if (_ptr) {
-            _ptr->inc();
-        }
-    }
-    ~NodePtr() {
-        if (_ptr) {
-            _ptr->dec();
-        }
-    }
+typedef Ptr<Node> NodePtr;
 
-    NodePtr(const NodePtr& p) : _ptr(p._ptr) {
-        if (_ptr) {
-            _ptr->inc();
-        }
-    }
-
-    NodePtr& operator= (const NodePtr& p) {
-        if (p._ptr == _ptr) return *this;
-        Node* old_ptr = _ptr;
-        _ptr = p._ptr;
-        if (_ptr) {
-            _ptr->inc();
-        }
-        if (old_ptr) {
-            old_ptr->dec();
-        }
-        return *this;
-    }
-
-    NodePtr& operator= (Node* node) {
-        if (_ptr == node) return *this;
-        Node* old_ptr = _ptr;
-        _ptr = node;
-        if (_ptr) {
-            _ptr->inc();
-        }
-        if (old_ptr) {
-            old_ptr->dec();
-        }
-        return *this;
-    }
-
-    Node* operator-> () const {
-        return _ptr;
-    }
-    Node* get_ptr() const {
-        return _ptr;
-    }
-    template<class T>
-    T* get_subtype() const {
-        return (T*)_ptr;
-    }
-
-  private:
-    Node* _ptr;
-};
-
-
-class RootPtr : GCRef {
+class RootPtr {
     friend class Interp;
     friend class NodeMaker;
   public:
@@ -188,7 +63,7 @@ class RootPtr : GCRef {
         return _ptr.operator->();
     }
 
-    void visit(NodeVisitor* visitor) {
+    void visit(GCVisitor* visitor) {
         visitor->visit(_ptr);
     }
 
@@ -298,7 +173,7 @@ struct LambdaNode : Node {
 
     NodePtr body;
 
-    void visit(NodeVisitor* visitor) {
+    void visit(GCVisitor* visitor) {
         visitor->visit(body);
     }
     size_t size() { return sizeof(LambdaNode); }
@@ -355,30 +230,9 @@ struct SubstNode : Node {
     depth_t var;
     depth_t shift;
 
-    void visit(NodeVisitor* visitor) {
+    void visit(GCVisitor* visitor) {
         visitor->visit(body);
         visitor->visit(arg);
-
-        if (memo) {
-            for (std::unordered_map<Node*, NodePtr>::iterator i = memo->begin(); i != memo->end(); ++i) {
-                if (visitor->alive(i->first)) {
-                    visitor->visit(i->second);
-                }
-            }
-        }
-    }
-    bool needs_cleanup(NodeVisitor* visitor) const { return !!memo; }
-    void cleanup(NodeVisitor* visitor) {
-        if (memo) {
-            for (std::unordered_map<Node*, NodePtr>::iterator i = memo->begin(); i != memo->end();) {
-                std::unordered_map<Node*, NodePtr>::iterator next_i = i;
-                ++next_i;
-                if (!visitor->alive(i->first)) {
-                    memo->erase(i);
-                    i = next_i;
-                }
-            }
-        }
     }
     
     size_t size() { return sizeof(SubstNode); }
@@ -407,7 +261,7 @@ struct ApplyNode : Node {
     // This is to make sure we have enough space for the transmogrification
     padding<2*sizeof(depth_t) + sizeof(void*)> _padding;
 
-    void visit(NodeVisitor* visitor) {
+    void visit(GCVisitor* visitor) {
         visitor->visit(f);
         visitor->visit(x);
     }
@@ -427,7 +281,7 @@ struct VarNode : Node {
         : Node(NODETYPE_VAR, true, depth)
     { }
 
-    void visit(NodeVisitor* visitor) { }
+    void visit(GCVisitor* visitor) { }
     size_t size() { return sizeof(VarNode); }
     Node* copy(void* target) {
         return new (target) VarNode(*this);
@@ -449,7 +303,13 @@ struct IndirNode : Node {
 
     NodePtr target;
 
-    void visit(NodeVisitor* visitor) {
+    Node* follow_indir() {
+        Node* r = target->follow_indir();
+        target = r;
+        return r;  // We "guarantee" that an indirnode points to a node
+    }
+
+    void visit(GCVisitor* visitor) {
         // XXX I think indir is a special case, so not sure what this should be...
         visitor->visit(target);
     }
@@ -469,7 +329,7 @@ struct PrimNode : Node
         : Node(NODETYPE_PRIM, true, 0)
     { }
 
-    void visit(NodeVisitor* visitor) { }
+    void visit(GCVisitor* visitor) { }
     size_t size() { return sizeof(PrimNode); }
     Node* copy(void* target) {
         return new (target) PrimNode(*this);

@@ -223,19 +223,15 @@ NodePtr Interp::substitute_memo(SubstNode* subst) {
         return subst->body;
     }
      
-    memo_table_t::iterator i = subst->memo->find(subst->body.get_ptr());
-    if (i != subst->memo->end()) {
-        return i->second;
-    }
-    int refcount = subst->body->refcount;  // substitute can return self
+    //memo_table_t::iterator i = subst->memo->find(subst->body.get_ptr());
+    //if (i != subst->memo->end()) {
+    //    return i->second;
+    //}
+    //int refcount = subst->body->refcount;  // substitute can return self
     NodePtr result = substitute(subst);
-    if (refcount > 1) {
-        std::cout << "Memo " << refcount << ", size " << subst->memo->size() << "\n";
-        subst->memo->insert(std::pair<Node*, NodePtr>(subst->body.get_ptr(), result));
-    }
-    else {
-        std::cout << "Skipped\n";
-    }
+    //if (refcount > 1) {
+    //    subst->memo->insert(std::pair<Node*, NodePtr>(subst->body.get_ptr(), result));
+    //}
 
     return result;
 }
@@ -286,29 +282,25 @@ NodePtr Interp::substitute(SubstNode* subst) {
 }
 
 
-class GCVisitor : public NodeVisitor {
+class CopyingGCVisitor : public GCVisitor {
 public:
-    GCVisitor(Heap* old_heap, Node** gc_stack)
+    CopyingGCVisitor(Heap* old_heap, GCRef** gc_stack)
         : work_left(false)
         , _gc_stack(gc_stack)
         , _old_heap(old_heap)
     { }
 
-    void visit(NodePtr& node) {
-        node = follow_indirs(node.get_ptr());
-        assert(0 <= node->type && node->type < NODETYPE_MAX);
-        if (_old_heap->contains(node.get_ptr())) {
-            if (node->gc_next == 0) {
-                node->gc_next = *_gc_stack;
-                *_gc_stack = node.get_ptr();
+    void visit(Ptr<GCRef>& ref) {
+        ref = ref->follow_indir();
+        if (_old_heap->contains(ref.get_ptr())) {
+            if (ref->gc_next == 0) {
+                ref->gc_next = *_gc_stack;
+                *_gc_stack = ref.get_ptr();
             }
             work_left = true;
         }
     }
 
-    bool alive(Node* node) const {
-        return node->gc_next || !_old_heap->contains(node);
-    }
 
     bool work_left;
 
@@ -320,7 +312,7 @@ private:
         return node;
     }
 
-    Node** _gc_stack;
+    GCRef** _gc_stack;
     Heap* _old_heap;
 };
 
@@ -330,29 +322,29 @@ void Interp::run_gc() {
     }
     std::swap(_heap, _backup_heap);
 
-    Node* top = 0;
-    Node* cleanup = 0;
+    GCRef* top = 0;
+    GCRef* cleanup = 0;
 
     // Visit root set
     for (RootPtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
-        GCVisitor visitor(_backup_heap, &top);
+        CopyingGCVisitor visitor(_backup_heap, &top);
         i->visit(&visitor);
     }
 
     while (top) {
         // Remove the node from the gc stack
-        Node* node = top;
+        GCRef* node = top;
         top = node->gc_next;
-        node->gc_next = (Node*)(-1);  // We won't traverse again, but we use this as
-                                      // a "seen" marker.  Cleared when copied.
+        node->gc_next = (GCRef*)(-1);  // We won't traverse again, but we use this as
+                                       // a "seen" marker.  Cleared when copied.
         
         // Add children to gc stack (and update indirections if already moved)
-        GCVisitor visitor(_backup_heap, &top);
+        CopyingGCVisitor visitor(_backup_heap, &top);
         node->visit(&visitor);
         
         // Copy node to new heap (if it was in the old heap, so we don't copy 
         // externally allocated things).
-        Node* copied;
+        GCRef* copied;
         if (_backup_heap->contains(node)) {
             copied = node->copy(allocate_node(node->size()));
             copied->gc_next = 0;
@@ -366,12 +358,12 @@ void Interp::run_gc() {
         if (node != copied) {
             assert(node->size() >= sizeof(IndirNode));
             node->destroy();
-            new (node) IndirNode(copied);
+            new (node) IndirNode((Node*)copied);  // XXX what if it wasn't a node?
         }
         copied->refcount = 0; // (But it doesn't really count as a reference)
 
         // Add the node to the cleanup stack if it had uncopied children.
-        if (visitor.work_left || copied->needs_cleanup(&visitor)) {
+        if (visitor.work_left) {
             copied->gc_next = cleanup;
             cleanup = copied;
         }
@@ -379,20 +371,19 @@ void Interp::run_gc() {
     
     while (cleanup) {
         // Remove the node from the cleanup stack
-        Node* node = cleanup;
+        GCRef* node = cleanup;
         cleanup = node->gc_next;
         node->gc_next = 0;
 
         // Update indirections.  Everything should be copied at this point.
-        GCVisitor visitor(_backup_heap, &top);
+        CopyingGCVisitor visitor(_backup_heap, &top);
         node->visit(&visitor);
-        node->cleanup(&visitor);
         assert(!visitor.work_left);
     }
     
     // Clean up root set
     for (RootPtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
-        GCVisitor visitor(_backup_heap, &top);
+        CopyingGCVisitor visitor(_backup_heap, &top);
         i->visit(&visitor);
         assert(!visitor.work_left);
     }

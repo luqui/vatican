@@ -6,6 +6,8 @@
 #include "Vatican.h"
 
 void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
+    node = node->follow_indir();
+
     if (seen.find(node) != seen.end()) {
         std::cout << "LOOP";
         return;

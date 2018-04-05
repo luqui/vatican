@@ -38,35 +38,7 @@ void Heap::clear() {
 
 
 NodePtr squash_indirs(const NodePtr& node) {
-    // TODO NodePtrs might be overkill for the traversal here
-    Node* p1 = node.get_ptr();
-    Node* p2 = node.get_ptr();    
-
-    while (p1->type == NODETYPE_INDIR) {
-        p1 = ((IndirNode*)p1)->target.get_ptr();
-        if (p1->type == NODETYPE_INDIR) {
-            p1 = ((IndirNode*)p1)->target.get_ptr();
-        }
-        if (p1->type == NODETYPE_INDIR) {
-            if (p2->type == NODETYPE_INDIR) {
-                p2 = ((IndirNode*)p2)->target.get_ptr();
-            }
-            if (p1 == p2) {
-                throw std::runtime_error("Indirection cycle detected");
-            }
-        }
-        else {
-            break;
-        }
-    }
-
-    NodePtr iter = node;
-    while (iter->type == NODETYPE_INDIR) {
-        NodePtr next = iter.get_subtype<IndirNode>()->target;
-        iter.get_subtype<IndirNode>()->target = p1;
-        iter = next;
-    }
-    return iter;
+    return node->follow_indir();
 }
 
 RootPtr::RootPtr(const RootPtr& const_p) {
@@ -98,14 +70,6 @@ RootPtr::RootPtr(Interp* interp, const NodePtr& ptr)
     _prev = interp->_rootset_back._prev;
     interp->_rootset_back._prev->_next = this;
     interp->_rootset_back._prev = this;
-}
-
-Node* RootPtr::follow_indirs() const {
-    Node* r = _ptr.get_ptr();
-    while (r->type == NODETYPE_INDIR) {
-        r = ((IndirNode*)r)->target.get_ptr();
-    }
-    return r;
 }
 
 void Interp::init(size_t heap_size, int fuel) {
@@ -275,6 +239,9 @@ NodePtr Interp::substitute(SubstNode* subst) {
             return new (allocate_node<ApplyNode>()) ApplyNode(
                 newdepth, newf, newx);
         }
+        break; case NODETYPE_INDIR: {
+            throw std::runtime_error("Indir nodes should have been squashed already");
+        }
         break; default: {
             return subst->body;
         }
@@ -291,7 +258,7 @@ public:
     { }
 
     void visit(Ptr<GCRef>& ref) {
-        ref = follow_indirs((Node*)ref->follow_indir());
+        ref = ref->follow_indir();
         if (_old_heap->contains(ref.get_ptr())) {
             if (ref->gc_next == 0) {
                 ref->gc_next = *_gc_stack;
@@ -305,13 +272,6 @@ public:
     bool work_left;
 
 private:
-    Node* follow_indirs(Node* node) {
-        while (node->type == NODETYPE_INDIR) {
-            node = ((IndirNode*)node)->target.get_ptr();
-        }
-        return node;
-    }
-
     GCRef** _gc_stack;
     Heap* _old_heap;
 };
@@ -353,6 +313,9 @@ void Interp::run_gc() {
         else {
             // (Except there are no externally allocated things)
             assert(false);
+        }
+        if (copied->node_id == 10754) {
+            NODE_ID++;
         }
 
         // Make the old node an indirection to the new one (if it was copied)

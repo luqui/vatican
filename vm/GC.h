@@ -45,6 +45,9 @@ class GCRef {
 public:
     GCRef() : gc_next(0), refcount(0) {
         node_id = NODE_ID++;
+        if (node_id == 10754) {
+            NODE_ID++;
+        }
     }
     virtual ~GCRef() { }
     virtual void visit(GCVisitor* visitor) = 0;
@@ -58,6 +61,9 @@ public:
         node_id = id;
     }
     virtual GCRef* follow_indir() {
+        return this;
+    }
+    virtual GCRef* follow_gc_indir() {
         return this;
     }
 
@@ -177,7 +183,7 @@ public:
     }
 
     size_t size() {
-        return sizeof(Indirection);
+        return sizeof(*this);
     }
 
     void destroy() {
@@ -214,7 +220,7 @@ public:
     }
 
     size_t size() {
-        return sizeof(GCIndirection);
+        return sizeof(*this);
     }
     
     GCRef* follow_indir() {

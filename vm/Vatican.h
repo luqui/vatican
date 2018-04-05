@@ -68,7 +68,7 @@ class RootPtr {
     }
 
     bool operator == (const RootPtr& other) const {
-        return follow_indirs() == other.follow_indirs();
+        return _ptr->follow_indir() == other->follow_indir();
     }
 
     bool operator != (const RootPtr& other) const {
@@ -92,8 +92,6 @@ class RootPtr {
         // comparison to null pointer.  This is to remove conditionals from
         // the destructor.
     }
-
-    Node* follow_indirs() const;
 
     NodePtr _ptr;
     RootPtr* _next;
@@ -176,7 +174,7 @@ struct LambdaNode : Node {
     void visit(GCVisitor* visitor) {
         visitor->visit(body);
     }
-    size_t size() { return sizeof(LambdaNode); }
+    size_t size() { return sizeof(*this); }
     Node* copy(void* target) {
         return new (target) LambdaNode(*this);
     } 
@@ -235,7 +233,7 @@ struct SubstNode : Node {
         visitor->visit(arg);
     }
     
-    size_t size() { return sizeof(SubstNode); }
+    size_t size() { return sizeof(*this); }
     Node* copy(void* target) {
         SubstNode* ret = new (target) SubstNode(*this);
         ret->memo = new (memo->get_allocator().allocate_bytes(sizeof(memo_table_t))) memo_table_t(*memo, memo->get_allocator());
@@ -265,7 +263,7 @@ struct ApplyNode : Node {
         visitor->visit(f);
         visitor->visit(x);
     }
-    size_t size() { return sizeof(ApplyNode); }
+    size_t size() { return sizeof(*this); }
     Node* copy(void* target) {
         return new (target) ApplyNode(*this);
     } 
@@ -282,7 +280,7 @@ struct VarNode : Node {
     { }
 
     void visit(GCVisitor* visitor) { }
-    size_t size() { return sizeof(VarNode); }
+    size_t size() { return sizeof(*this); }
     Node* copy(void* target) {
         return new (target) VarNode(*this);
     } 
@@ -295,10 +293,10 @@ private:
     padding<sizeof(NodePtr)> _indir_padding;
 };
 
-struct IndirNode : Node {
+struct IndirNode : GCRef {
     IndirNode(const NodePtr& target)
-        : Node(NODETYPE_INDIR, false, target->depth)
-        , target(target)
+        //: Node(NODETYPE_INDIR, false, target->depth)
+        : target(target)
     { }
 
     NodePtr target;
@@ -313,13 +311,13 @@ struct IndirNode : Node {
         // XXX I think indir is a special case, so not sure what this should be...
         visitor->visit(target);
     }
-    size_t size() { return sizeof(IndirNode); }
-    Node* copy(void* target) {
+    size_t size() { return sizeof(*this); }
+    GCRef* copy(void* target) {
         return new (target) IndirNode(*this);
     } 
     void destroy() {
         target = 0;
-        Node::destroy();
+        GCRef::destroy();
     }
 };
 
@@ -330,7 +328,7 @@ struct PrimNode : Node
     { }
 
     void visit(GCVisitor* visitor) { }
-    size_t size() { return sizeof(PrimNode); }
+    size_t size() { return sizeof(*this); }
     Node* copy(void* target) {
         return new (target) PrimNode(*this);
     } 

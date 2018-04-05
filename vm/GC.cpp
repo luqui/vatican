@@ -4,7 +4,7 @@
 #include "Vatican.h"
 
 void GCRef::indirect(const Ptr<GCRef>& target) {
-    assert(sizeof(IndirNode) <= size());
+    assert(sizeof(Indirection) <= size());
 
     int rc = refcount;
     destroy();

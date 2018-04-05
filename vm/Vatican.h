@@ -295,34 +295,6 @@ private:
     padding<sizeof(NodePtr)> _indir_padding;
 };
 
-struct IndirNode : GCRef {
-    IndirNode(const NodePtr& target)
-        //: Node(NODETYPE_INDIR, false, target->depth)
-        : target(target)
-    { }
-
-    NodePtr target;
-
-    Node* follow_indir() {
-        Node* r = target->follow_indir();
-        target = r;
-        return r;  // We "guarantee" that an indirnode points to a node
-    }
-
-    void visit(GCVisitor* visitor) {
-        // XXX I think indir is a special case, so not sure what this should be...
-        visitor->visit(target);
-    }
-    size_t size() { return sizeof(*this); }
-    GCRef* copy(void* target) {
-        return new (target) IndirNode(*this);
-    } 
-    void destroy() {
-        target = 0;
-        GCRef::destroy();
-    }
-};
-
 struct PrimNode : Node 
 {
     PrimNode()

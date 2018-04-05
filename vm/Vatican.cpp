@@ -216,6 +216,7 @@ NodePtr Interp::substitute(SubstNode* subst) {
         break; case NODETYPE_LAMBDA: {
             LambdaNode* lambda = subst->body.get_subtype<LambdaNode>();
             
+            lambda->body = lambda->body->follow_indir();
             NodePtr substbody = subst->var <= lambda->body->depth
                               ? new (allocate_node<SubstNode>()) SubstNode(
                                    newdepth+1, lambda->body, subst->var, subst->arg, subst->shift, subst->memo)
@@ -226,12 +227,14 @@ NodePtr Interp::substitute(SubstNode* subst) {
         break; case NODETYPE_APPLY: {
             ApplyNode* apply = subst->body.get_subtype<ApplyNode>();
         
+            apply->f = apply->f->follow_indir();
             NodePtr newf = subst->var <= apply->f->depth
                          ? new (allocate_node<SubstNode>()) SubstNode(
                                newdepth, apply->f, subst->var, subst->arg, subst->shift, subst->memo)
                          : apply->f;
 
 
+            apply->x = apply->x->follow_indir();
             NodePtr newx = subst->var <= apply->x->depth
                          ? new (allocate_node<SubstNode>()) SubstNode(
                                newdepth, apply->x, subst->var, subst->arg, subst->shift, subst->memo)

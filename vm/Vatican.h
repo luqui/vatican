@@ -68,7 +68,7 @@ class RootPtr {
     }
 
     bool operator == (const RootPtr& other) const {
-        return follow_indirs() == other.follow_indirs();
+        return _ptr->follow_indir() == other._ptr->follow_indir();
     }
 
     bool operator != (const RootPtr& other) const {
@@ -293,34 +293,6 @@ struct VarNode : Node {
 private:
     // It's possible we can use gc_next to indirect to avoid this padding.
     padding<sizeof(NodePtr)> _indir_padding;
-};
-
-struct IndirNode : Node {
-    IndirNode(const NodePtr& target)
-        : Node(NODETYPE_INDIR, false, target->depth)
-        , target(target)
-    { }
-
-    NodePtr target;
-
-    Node* follow_indir() {
-        Node* r = target->follow_indir();
-        target = r;
-        return r;  // We "guarantee" that an indirnode points to a node
-    }
-
-    void visit(GCVisitor* visitor) {
-        // XXX I think indir is a special case, so not sure what this should be...
-        visitor->visit(target);
-    }
-    size_t size() { return sizeof(IndirNode); }
-    Node* copy(void* target) {
-        return new (target) IndirNode(*this);
-    } 
-    void destroy() {
-        target = 0;
-        Node::destroy();
-    }
 };
 
 struct PrimNode : Node 

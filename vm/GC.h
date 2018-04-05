@@ -1,6 +1,9 @@
 #ifndef __GC_H__
 #define __GC_H__
 
+#include <cstring>
+#include <new>
+
 typedef unsigned char byte;
 
 class Heap {
@@ -36,6 +39,8 @@ class GCVisitor;
 
 extern int NODE_ID;
 
+template<class T> class Ptr;
+
 class GCRef {
 public:
     GCRef() : gc_next(0), refcount(0) {
@@ -48,11 +53,16 @@ public:
     virtual void destroy() {
         // Unnecessary, but clear the memory for debugging to make sure we
         // aren't over-freeing.
+        int id = node_id;
         memset((void*)this, 0xbf, sizeof(*this));
+        node_id = id;
     }
     virtual GCRef* follow_indir() {
         return this;
     }
+
+    void indirect(const Ptr<GCRef>& target);
+    void gc_indirect(GCRef* target);
 
     void inc() {
         refcount++;
@@ -149,6 +159,71 @@ public:
     void visit(Ptr<T>& ptr) {
         visit(ptr.template cast<GCRef>());
     }
+};
+
+
+class Indirection : public GCRef {
+public:
+    Indirection(const Ptr<GCRef>& target) : _target(target)
+    { }
+
+    void visit(GCVisitor* visitor) {
+        visitor->visit(_target);
+        // XXX or maybe _target->visit(visitor)  ?
+    }
+
+    GCRef* copy(void* mem) {
+        assert(false);  // Indirections should be followed, not copied.
+    }
+
+    size_t size() {
+        return sizeof(Indirection);
+    }
+
+    void destroy() {
+        _target = 0;
+    }
+    
+    GCRef* follow_indir() {
+        // XXX do this without the C stack
+        GCRef* r = _target->follow_indir();
+        _target = r;
+        return r;
+    }
+
+private:
+    // TODO maybe we can reuse gc_next for this to avoid having to pad.
+    Ptr<GCRef> _target;
+};
+
+
+// A GCIndirection is like an indirection except that it is not refcounted.
+class GCIndirection : public GCRef {
+public:
+    GCIndirection(GCRef* target) : _target(target)
+    { }
+
+    void visit(GCVisitor* visitor) {
+        // We've already visited this, that's why it's an indirection.
+        assert(false);
+    }
+
+    GCRef* copy(void* mem) {
+        // We shouldn't ever be copying one of these.
+        assert(false);
+    }
+
+    size_t size() {
+        return sizeof(GCIndirection);
+    }
+    
+    GCRef* follow_indir() {
+        return _target->follow_indir();
+    }
+
+private:
+    // TODO maybe we can reuse gc_next for this to avoid having to pad.
+    GCRef* _target;
 };
 
 

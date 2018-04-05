@@ -37,38 +37,6 @@ void Heap::clear() {
 }
 
 
-NodePtr squash_indirs(const NodePtr& node) {
-    // TODO NodePtrs might be overkill for the traversal here
-    Node* p1 = node.get_ptr();
-    Node* p2 = node.get_ptr();    
-
-    while (p1->type == NODETYPE_INDIR) {
-        p1 = ((IndirNode*)p1)->target.get_ptr();
-        if (p1->type == NODETYPE_INDIR) {
-            p1 = ((IndirNode*)p1)->target.get_ptr();
-        }
-        if (p1->type == NODETYPE_INDIR) {
-            if (p2->type == NODETYPE_INDIR) {
-                p2 = ((IndirNode*)p2)->target.get_ptr();
-            }
-            if (p1 == p2) {
-                throw std::runtime_error("Indirection cycle detected");
-            }
-        }
-        else {
-            break;
-        }
-    }
-
-    NodePtr iter = node;
-    while (iter->type == NODETYPE_INDIR) {
-        NodePtr next = iter.get_subtype<IndirNode>()->target;
-        iter.get_subtype<IndirNode>()->target = p1;
-        iter = next;
-    }
-    return iter;
-}
-
 RootPtr::RootPtr(const RootPtr& const_p) {
     RootPtr& p = const_cast<RootPtr&>(const_p);
 
@@ -98,14 +66,6 @@ RootPtr::RootPtr(Interp* interp, const NodePtr& ptr)
     _prev = interp->_rootset_back._prev;
     interp->_rootset_back._prev->_next = this;
     interp->_rootset_back._prev = this;
-}
-
-Node* RootPtr::follow_indirs() const {
-    Node* r = _ptr.get_ptr();
-    while (r->type == NODETYPE_INDIR) {
-        r = ((IndirNode*)r)->target.get_ptr();
-    }
-    return r;
 }
 
 void Interp::init(size_t heap_size, int fuel) {
@@ -154,7 +114,7 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
         throw std::runtime_error("Out of fuel");
     }
 
-    node = squash_indirs(node);
+    node = node->follow_indir();
 
     if (node->blocked) {
         return;
@@ -182,10 +142,10 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
 
             int refcount = node->refcount;
             memo_table_t* memo = new (allocate_node<memo_table_t>()) memo_table_t(get_allocator<memo_table_t::value_type>());
-            node->destroy();
             // NB this overwrites node!
             // Assert to make sure the transmogrification is safe.
             assert(sizeof(ApplyNode) >= sizeof(SubstNode));
+            node->destroy();
             new (node.get_ptr()) SubstNode(
                 apply_depth, subst_body, bind_depth, subst_arg, shift, memo);
             node->refcount = refcount;
@@ -195,14 +155,7 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
             SubstNode* subst = node.get_subtype<SubstNode>();
             reduce_whnf_wrapper(subst->body);
             NodePtr substed = substitute_memo(subst);
-    
-
-            // Make sure the transmogrification is safe.
-            int refcount = node->refcount;
-            assert(sizeof(SubstNode) >= sizeof(IndirNode));
-            node->destroy();
-            new (node.get_ptr()) IndirNode(substed);
-            node->refcount = refcount;
+            node->indirect(substed.cast<GCRef>());
             goto REDO;
         }
         break; case NODETYPE_INDIR: {
@@ -301,20 +254,13 @@ public:
         }
     }
 
-
     bool work_left;
 
 private:
-    Node* follow_indirs(Node* node) {
-        while (node->type == NODETYPE_INDIR) {
-            node = ((IndirNode*)node)->target.get_ptr();
-        }
-        return node;
-    }
-
     GCRef** _gc_stack;
     Heap* _old_heap;
 };
+
 
 void Interp::run_gc() {
     if (_backup_heap == 0) {
@@ -348,6 +294,7 @@ void Interp::run_gc() {
         if (_backup_heap->contains(node)) {
             copied = node->copy(allocate_node(node->size()));
             copied->gc_next = 0;
+            copied->refcount = 0;
         }
         else {
             // (Except there are no externally allocated things)
@@ -356,11 +303,8 @@ void Interp::run_gc() {
         
         // Make the old node an indirection to the new one (if it was copied)
         if (node != copied) {
-            assert(node->size() >= sizeof(IndirNode));
-            node->destroy();
-            new (node) IndirNode((Node*)copied);  // XXX what if it wasn't a node?
+            node->gc_indirect(copied);
         }
-        copied->refcount = 0; // (But it doesn't really count as a reference)
 
         // Add the node to the cleanup stack if it had uncopied children.
         if (visitor.work_left) {

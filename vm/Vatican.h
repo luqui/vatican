@@ -302,13 +302,7 @@ struct IndirNode : GCRef {
     NodePtr target;
 
     Node* follow_indir() {
-        if (N10754_COUNT == 21 && node_id == 10754) {
-            std::cout << "Indirecting " << target.get_ptr() << "\n";
-        }
         Node* r = target->follow_indir();
-        if (N10754_COUNT == 21 && node_id == 10754) {
-            std::cout << "It worked\n";
-        }
         target = r;
         return r;  // We "guarantee" that an indirnode points to a node
     }

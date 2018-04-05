@@ -5,30 +5,30 @@
 #include <set>
 #include "Vatican.h"
 
-void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
-    node = node->follow_indir();
+void show_node_rec(Ptr<Node>& node, bool lambda_parens, bool apply_parens, std::set<Node*> seen) {
+    follow_indirs(node);
 
-    if (seen.find(node) != seen.end()) {
+    if (seen.find(node.get_ptr()) != seen.end()) {
         std::cout << "LOOP";
         return;
     }
-    seen.insert(node);
+    seen.insert(node.get_ptr());
 
     std::cout << node->refcount << "{";
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
-            LambdaNode* lambda = (LambdaNode*)node;
+            LambdaNode* lambda = node.get_subtype<LambdaNode>();
             if (lambda_parens) { std::cout << "("; }
             std::cout << "\\[" << lambda->depth+1 << "]. ";
-            show_node_rec(lambda->body.get_ptr(), false, false, seen);
+            show_node_rec(lambda->body, false, false, seen);
             if (lambda_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_APPLY: {
-            ApplyNode* apply = (ApplyNode*)node;
+            ApplyNode* apply = node.get_subtype<ApplyNode>();
             if (apply_parens) { std::cout << "("; }
-            show_node_rec(apply->f.get_ptr(), true, false, seen);
+            show_node_rec(apply->f, true, false, seen);
             std::cout << " ";
-            show_node_rec(apply->x.get_ptr(), true, true, seen);
+            show_node_rec(apply->x, true, true, seen);
             if (apply_parens) { std::cout << ")"; }
         }
         break; case NODETYPE_VAR: {
@@ -38,17 +38,12 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
             std::cout << "PRIM";
         }
         break; case NODETYPE_SUBST: {
-            SubstNode* subst = (SubstNode*)node;
+            SubstNode* subst = node.get_subtype<SubstNode>();
             std::cout << "(";
-            show_node_rec(subst->body.get_ptr(), true, true, seen);
+            show_node_rec(subst->body, true, true, seen);
             std::cout << " @[ " << subst->var << " | " << subst->shift << " ] ";
-            show_node_rec(subst->arg.get_ptr(), true, true, seen);
+            show_node_rec(subst->arg, true, true, seen);
             std::cout << ")";
-        }
-        break; case NODETYPE_INDIR: {
-            IndirNode* indir = (IndirNode*)node;
-            std::cout << "!";
-            show_node_rec(indir->target.get_ptr(), true, true, seen);
         }
         break; default: {
             assert(false);
@@ -59,13 +54,15 @@ void show_node_rec(Node* node, bool lambda_parens, bool apply_parens, std::set<N
 
 void inspect(Node* node) {
     std::set<Node*> seen;
-    show_node_rec(node, false, false, seen);
+    NodePtr p = node;
+    show_node_rec(p, false, false, seen);
     std::cout << "\n";
 }
 
 void show_node(const RootPtr& node) {
     std::set<Node*> seen;
-    show_node_rec(node.unsafe_get_ptr(), false, false, seen);
+    NodePtr p = node.unsafe_get_ptr();
+    show_node_rec(p, false, false, seen);
     std::cout << "\n";
 }
 

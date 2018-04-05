@@ -1,9 +1,10 @@
 #include <cassert>
 
 #include "GC.h"
+#include "Vatican.h"
 
 void GCRef::indirect(const Ptr<GCRef>& target) {
-    assert(sizeof(Indirection) <= size());
+    assert(sizeof(IndirNode) <= size());
 
     int rc = refcount;
     destroy();

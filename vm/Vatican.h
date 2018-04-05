@@ -68,7 +68,9 @@ class RootPtr {
     }
 
     bool operator == (const RootPtr& other) const {
-        return _ptr->follow_indir() == other->follow_indir();
+        follow_indirs(const_cast<RootPtr*>(this)->_ptr);
+        follow_indirs(const_cast<RootPtr&>(other)._ptr);
+        return _ptr.get_ptr() == other._ptr.get_ptr();
     }
 
     bool operator != (const RootPtr& other) const {

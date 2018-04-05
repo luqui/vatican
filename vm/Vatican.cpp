@@ -37,10 +37,6 @@ void Heap::clear() {
 }
 
 
-NodePtr squash_indirs(const NodePtr& node) {
-    return node->follow_indir();
-}
-
 RootPtr::RootPtr(const RootPtr& const_p) {
     RootPtr& p = const_cast<RootPtr&>(const_p);
 
@@ -90,7 +86,7 @@ RootPtr Interp::reduce_whnf(const RootPtr& node) {
     // nodes that are on the C stack being reduced, and ain't nobody got time
     // for that
     try {
-        reduce_whnf_wrapper(const_cast<NodePtr&>(node._ptr));
+        reduce_whnf_rec(const_cast<NodePtr&>(node._ptr));
         return node;
     }
     catch (time_to_gc_exception& e) {
@@ -104,22 +100,13 @@ RootPtr Interp::reduce_whnf(const RootPtr& node) {
     }
 }
 
-void Interp::reduce_whnf_wrapper(NodePtr& node) {
-    node = squash_indirs(node);
-    assert(!_backup_heap || !_backup_heap->contains(node.get_ptr()));
-    assert(0 <= node->type && node->type < NODETYPE_MAX);
-    reduce_whnf_rec(node);
-    assert(!_backup_heap || !_backup_heap->contains(node.get_ptr()));
-    assert(0 <= node->type && node->type < NODETYPE_MAX);
-}
-
 void Interp::reduce_whnf_rec(NodePtr& node) {
   REDO:
     if (_fuel > 0 && --_fuel == 0) {
         throw std::runtime_error("Out of fuel");
     }
     
-    node = squash_indirs(node);
+    follow_indirs(node);
 
     if (node->blocked) {
         return;
@@ -131,7 +118,7 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
         }
         break; case NODETYPE_APPLY: {
             ApplyNode* apply = node.get_subtype<ApplyNode>();
-            reduce_whnf_wrapper(apply->f);
+            reduce_whnf_rec(apply->f);
             
             if (apply->f->type != NODETYPE_LAMBDA) {
                 apply->blocked = true;
@@ -145,29 +132,27 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
             NodePtr subst_body = apply->f.get_subtype<LambdaNode>()->body;
             NodePtr subst_arg = apply->x;
 
+            void* mem = node.get_ptr();
             int refcount = node->refcount;
             memo_table_t* memo = new (allocate_node<memo_table_t>()) memo_table_t(get_allocator<memo_table_t::value_type>());
-            node->destroy();
+
             // NB this overwrites node!
             // Assert to make sure the transmogrification is safe.
             assert(sizeof(ApplyNode) >= sizeof(SubstNode));
-            new (node.get_ptr()) SubstNode(
+            node->destroy();
+            new (mem) SubstNode(
                 apply_depth, subst_body, bind_depth, subst_arg, shift, memo);
             node->refcount = refcount;
+
             goto REDO;
         }
         break; case NODETYPE_SUBST: {
             SubstNode* subst = node.get_subtype<SubstNode>();
-            reduce_whnf_wrapper(subst->body);
+            reduce_whnf_rec(subst->body);
             NodePtr substed = substitute_memo(subst);
     
-
             // Make sure the transmogrification is safe.
-            int refcount = node->refcount;
-            assert(sizeof(SubstNode) >= sizeof(IndirNode));
-            node->destroy();
-            new (node.get_ptr()) IndirNode(substed);
-            node->refcount = refcount;
+            node->indirect(substed);
             goto REDO;
         }
         break; case NODETYPE_INDIR: {
@@ -216,7 +201,7 @@ NodePtr Interp::substitute(SubstNode* subst) {
         break; case NODETYPE_LAMBDA: {
             LambdaNode* lambda = subst->body.get_subtype<LambdaNode>();
             
-            lambda->body = lambda->body->follow_indir();
+            follow_indirs(lambda->body);
             NodePtr substbody = subst->var <= lambda->body->depth
                               ? new (allocate_node<SubstNode>()) SubstNode(
                                    newdepth+1, lambda->body, subst->var, subst->arg, subst->shift, subst->memo)
@@ -227,14 +212,15 @@ NodePtr Interp::substitute(SubstNode* subst) {
         break; case NODETYPE_APPLY: {
             ApplyNode* apply = subst->body.get_subtype<ApplyNode>();
         
-            apply->f = apply->f->follow_indir();
+            // f is never an indir because we always substitute into a whnf expr
+            //apply->f = apply->f->follow_indir();
             NodePtr newf = subst->var <= apply->f->depth
                          ? new (allocate_node<SubstNode>()) SubstNode(
                                newdepth, apply->f, subst->var, subst->arg, subst->shift, subst->memo)
                          : apply->f;
 
 
-            apply->x = apply->x->follow_indir();
+            follow_indirs(apply->x);
             NodePtr newx = subst->var <= apply->x->depth
                          ? new (allocate_node<SubstNode>()) SubstNode(
                                newdepth, apply->x, subst->var, subst->arg, subst->shift, subst->memo)
@@ -378,7 +364,7 @@ void NodeMaker::fixup(const RootPtr& ptr) {
 }
 
 void NodeMaker::fixup_rec(NodePtr& node, depth_t depth) {
-    node = node->follow_indir();
+    follow_indirs(node);
 
     if (node->type == NODETYPE_VAR ? node->depth > 0 : node->depth >= 0) {
         return;  // Already converted

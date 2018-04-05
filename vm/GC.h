@@ -132,35 +132,42 @@ class Ptr {
     }
 
     template<class U>
-    Ptr<U>& cast() {
-        return *(Ptr<U>*)this;
+    operator Ptr<U>& () {
+        static_assert(std::is_base_of<U, T>::value, "Non-upcast of Ptr");
+        return *reinterpret_cast<Ptr<U>*>(this);
     }
 
     T* operator-> () const {
+        assert(!_ptr || dynamic_cast<T*>(static_cast<GCRef*>(_ptr)));
         return _ptr;
     }
     T* get_ptr() const {
+        assert(!_ptr || dynamic_cast<T*>(static_cast<GCRef*>(_ptr)));
         return _ptr;
     }
     template<class U>
     U* get_subtype() const {
-        return (U*)_ptr;
+        U* r = dynamic_cast<U*>(static_cast<GCRef*>(_ptr));
+        assert(!_ptr || r);
+        return r;
     }
 
   private:
     T* _ptr;
 };
 
+template<class T>
+void follow_indirs(Ptr<T>& p) {
+    T* r = dynamic_cast<T*>(((Ptr<GCRef>&)p)->follow_indir());
+    assert(r);
+    p = r;
+}
+
 
 class GCVisitor {
 public:
     virtual ~GCVisitor() { }
     virtual void visit(Ptr<GCRef>&) = 0;
-
-    template<class T>
-    void visit(Ptr<T>& ptr) {
-        visit(ptr.template cast<GCRef>());
-    }
 };
 
 

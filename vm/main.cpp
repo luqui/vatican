@@ -236,6 +236,7 @@ void test_scott_stream(size_t heap_size) {
     RootPtr stream = lib.apply(lib.fix(), lib.apply(tuple, arg));
     lib.fixup(stream);
 
+    std::cout << "badtimes = " << (badtimes ? *badtimes : 0) << "\n";
     try {
         for (int i = 0; i < 100; i++) {
             RootPtr item = lib.apply(fst, stream);

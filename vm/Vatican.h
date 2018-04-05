@@ -302,7 +302,13 @@ struct IndirNode : GCRef {
     NodePtr target;
 
     Node* follow_indir() {
+        if (N10754_COUNT == 21 && node_id == 10754) {
+            std::cout << "Indirecting " << target.get_ptr() << "\n";
+        }
         Node* r = target->follow_indir();
+        if (N10754_COUNT == 21 && node_id == 10754) {
+            std::cout << "It worked\n";
+        }
         target = r;
         return r;  // We "guarantee" that an indirnode points to a node
     }
@@ -416,7 +422,7 @@ class NodeMaker {
     void fixup(const RootPtr& ptr);
     
   private:
-    void fixup_rec(const NodePtr& node, depth_t depth);
+    void fixup_rec(NodePtr& node, depth_t depth);
     
     Interp* _interp;
 };

@@ -3,6 +3,7 @@
 
 #include <cstring>
 #include <new>
+#include <iostream>
 
 typedef unsigned char byte;
 
@@ -41,11 +42,17 @@ extern int NODE_ID;
 
 template<class T> class Ptr;
 
+extern int N10754_COUNT;
+extern void** badtimes;
+
 class GCRef {
 public:
+
     GCRef() : gc_next(0), refcount(0) {
         node_id = NODE_ID++;
         if (node_id == 10754) {
+            std::cout << "10754 created\n";
+            badtimes = (void**)this+3;
             NODE_ID++;
         }
     }
@@ -56,14 +63,14 @@ public:
     virtual void destroy() {
         // Unnecessary, but clear the memory for debugging to make sure we
         // aren't over-freeing.
+        if (node_id == 10754) {
+            std::cout << "Destroying 10754\n";
+        }
         int id = node_id;
-        memset((void*)this, 0xbf, sizeof(*this));
+        memset((void*)this, 0xbf, size());
         node_id = id;
     }
     virtual GCRef* follow_indir() {
-        return this;
-    }
-    virtual GCRef* follow_gc_indir() {
         return this;
     }
 
@@ -72,9 +79,20 @@ public:
 
     void inc() {
         refcount++;
+        if (node_id == 10754) {
+            std::cout << "10754 refs = " << refcount << "; " << *((void**)this+3) << "\n";
+            N10754_COUNT++;
+        }
     }
     void dec() {
         refcount--;
+        if (node_id == 10754) {
+            std::cout << "10754 refs = " << refcount << "; " << *((void**)this+3) << "\n";
+            N10754_COUNT++;
+            if (N10754_COUNT == 8) {
+                NODE_ID++;
+            }
+        }
         if (refcount == 0) {
             destroy();
         }

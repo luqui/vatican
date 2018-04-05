@@ -105,6 +105,7 @@ RootPtr Interp::reduce_whnf(const RootPtr& node) {
 }
 
 void Interp::reduce_whnf_wrapper(NodePtr& node) {
+    node = squash_indirs(node);
     assert(!_backup_heap || !_backup_heap->contains(node.get_ptr()));
     assert(0 <= node->type && node->type < NODETYPE_MAX);
     reduce_whnf_rec(node);
@@ -117,7 +118,7 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
     if (_fuel > 0 && --_fuel == 0) {
         throw std::runtime_error("Out of fuel");
     }
-
+    
     node = squash_indirs(node);
 
     if (node->blocked) {
@@ -370,10 +371,12 @@ void* Interp::allocate_node(size_t size) {
 
 
 void NodeMaker::fixup(const RootPtr& ptr) {
-    fixup_rec(ptr._ptr, 0);
+    fixup_rec(const_cast<NodePtr&>(ptr._ptr), 0);
 }
 
-void NodeMaker::fixup_rec(const NodePtr& node, depth_t depth) {
+void NodeMaker::fixup_rec(NodePtr& node, depth_t depth) {
+    node = node->follow_indir();
+
     if (node->type == NODETYPE_VAR ? node->depth > 0 : node->depth >= 0) {
         return;  // Already converted
     }

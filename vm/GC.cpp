@@ -2,6 +2,9 @@
 
 #include "GC.h"
 
+int N10754_COUNT = 0;
+void** badtimes = 0;
+
 void GCRef::indirect(const Ptr<GCRef>& target) {
     assert(sizeof(Indirection) <= size());
 

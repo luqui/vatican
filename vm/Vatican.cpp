@@ -288,7 +288,7 @@ public:
         _cost += calc_cost(ref, _circular_penalty);
     }
 
-    static float calc_cost(Ptr<GCRef>& ref, penalty_map_t* penalty) {
+    static milibytes_t calc_cost(Ptr<GCRef>& ref, penalty_map_t* penalty) {
         follow_indirs(ref);
         if (ref->size_cost > 0) {
             return ref->size_cost / get_effective_refcount(ref, penalty);
@@ -309,7 +309,7 @@ public:
 
         SizeCostGCVisitor visitor(penalty);
         ref->visit(&visitor);
-        ref->size_cost = ref->size() + visitor._cost;
+        ref->size_cost = 1024*ref->size() + visitor._cost;
 
         // Gives unevaluation nodes a chance to make their choice and modify their
         // effective size.  
@@ -329,8 +329,8 @@ public:
         // Unused for size calculation
         assert(false);
     }
-    float _cost;
 private:
+    milibytes_t _cost;
     penalty_map_t* _circular_penalty;
 };
 

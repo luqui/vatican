@@ -42,6 +42,8 @@ extern int NODE_ID;
 
 template<class T> class Ptr;
 
+typedef int milibytes_t; // 1024th of a byte
+
 class GCRef {
 public:
     GCRef() : gc_next(0), size_cost(0), refcount(0) {
@@ -85,7 +87,7 @@ public:
     }
 
     GCRef* gc_next;
-    float size_cost;
+    milibytes_t size_cost;
     int refcount;
     // For debugging
     int node_id;

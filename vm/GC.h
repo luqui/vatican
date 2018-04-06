@@ -63,7 +63,12 @@ public:
         return this;
     }
 
-    void indirect(const Ptr<GCRef>& target);
+    // Note that we do not take a const Ptr<GCRef>& target, because of a very
+    // subtle bug if you try to indirect a node to one of its members.  The
+    // destructor will end up destroying the pointer before we have a chance to
+    // indirect to it.
+    void indirect(Ptr<GCRef> target);
+
     void gc_indirect(GCRef* target);
 
     void inc() {

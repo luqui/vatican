@@ -3,9 +3,10 @@
 #include "GC.h"
 #include "Vatican.h"
 
-void GCRef::indirect(const Ptr<GCRef>& target) {
+void GCRef::indirect(Ptr<GCRef> target) {
     assert(sizeof(Indirection) <= size());
 
+    Ptr<GCRef> target_copy = target;
     int rc = refcount;
     destroy();
     new (this) Indirection(target);

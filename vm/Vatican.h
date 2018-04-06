@@ -20,6 +20,7 @@ enum NodeType
     { NODETYPE_LAMBDA
     , NODETYPE_APPLY
     , NODETYPE_SUBST
+    , NODETYPE_UNEVAL
     , NODETYPE_VAR
     , NODETYPE_INDIR
     , NODETYPE_PRIM
@@ -249,6 +250,7 @@ struct MemoTable : public GCRef {
 
     void destroy() {
         table.clear();
+        GCRef::destroy();
     }
 
     NodePtr lookup(const NodePtr& key) {
@@ -301,6 +303,36 @@ struct SubstNode : public Node {
     }
 };
 
+
+struct UnevalNode : public Node {
+    UnevalNode(depth_t depth, const NodePtr& alta, const NodePtr& altb)
+        : Node(NODETYPE_UNEVAL, false, depth)
+        , alta(alta)
+        , altb(altb)
+    { }
+
+    NodePtr alta;
+    NodePtr altb;
+
+    void visit(GCVisitor* visitor) {
+        visitor->visit(altb);
+        visitor->visit(alta);
+    }
+
+    size_t size() { return sizeof(*this); }
+    Node* copy(void* target, GCVisitor*) {
+        return new (target) UnevalNode(*this); // TODO or just return an indirection straight away?
+                                               // or even squash the indirection straight away?
+    }
+    
+    void destroy() {
+        alta = 0;
+        altb = 0;
+        Node::destroy();
+    }
+};
+
+
 struct ApplyNode : public Node {
     ApplyNode(depth_t depth, const NodePtr& f, const NodePtr& x)
         : Node(NODETYPE_APPLY, false, depth)
@@ -310,9 +342,6 @@ struct ApplyNode : public Node {
 
     NodePtr f;
     NodePtr x;
-
-    // This is to make sure we have enough space for the transmogrification
-    padding<2*sizeof(depth_t) + sizeof(void*)> _padding;
 
     void visit(GCVisitor* visitor) {
         visitor->visit(f);
@@ -339,9 +368,6 @@ struct VarNode : public Node {
     Node* copy(void* target, GCVisitor*) {
         return new (target) VarNode(*this);
     } 
-    void destroy() {
-        Node::destroy();
-    }
 
 private:
     // It's possible we can use gc_next to indirect to avoid this padding.
@@ -358,9 +384,6 @@ struct PrimNode : public Node {
     Node* copy(void* target, GCVisitor*) {
         return new (target) PrimNode(*this);
     } 
-    void destroy() {
-        Node::destroy();
-    }
 
 private:
     padding<sizeof(NodePtr)> _indir_padding;

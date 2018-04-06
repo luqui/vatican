@@ -132,18 +132,17 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
             NodePtr subst_body = apply->f.get_subtype<LambdaNode>()->body;
             NodePtr subst_arg = apply->x;
 
-            void* mem = node.get_ptr();
-            int refcount = node->refcount;
             MemoTable* memo = new (allocate_node<MemoTable>()) MemoTable(MemoTable::memo_table_t(get_allocator<MemoTable::value_t>()));
+            NodePtr subst = new (allocate_node<SubstNode>()) SubstNode(apply_depth, subst_body, bind_depth, subst_arg, shift, memo);
 
-            // NB this overwrites node!
-            // Assert to make sure the transmogrification is safe.
-            assert(sizeof(ApplyNode) >= sizeof(SubstNode));
-            node->destroy();
-            new (mem) SubstNode(
-                apply_depth, subst_body, bind_depth, subst_arg, shift, memo);
-            node->refcount = refcount;
-
+            if (node->refcount > 1) {
+                NodePtr apply_copy = new (allocate_node<ApplyNode>()) ApplyNode(apply_depth, apply->f, apply->x);
+                Ptr<GCRef> uneval = new (allocate_node<UnevalNode>()) UnevalNode(apply_depth, apply_copy, subst);
+                node->indirect(uneval);
+            }
+            else {
+                node->indirect(subst);
+            }
             goto REDO;
         }
         break; case NODETYPE_SUBST: {
@@ -152,6 +151,22 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
             NodePtr substed = substitute_memo(subst);
     
             node->indirect(substed);
+            goto REDO;
+        }
+        break; case NODETYPE_UNEVAL: {
+            UnevalNode* uneval = node.get_subtype<UnevalNode>();
+            if (!uneval->alta) {
+                follow_indirs(uneval->altb);
+                node->indirect(uneval->altb);
+            }
+            else if (!uneval->altb) {
+                follow_indirs(uneval->alta);
+                node->indirect(uneval->alta);
+            }
+            else {
+                // altb is the more evaluated one.
+                node = uneval->altb;
+            }
             goto REDO;
         }
         break; case NODETYPE_INDIR: {
@@ -211,7 +226,6 @@ NodePtr Interp::substitute(SubstNode* subst) {
         break; case NODETYPE_APPLY: {
             ApplyNode* apply = subst->body.get_subtype<ApplyNode>();
         
-            // f is never an indir because we always substitute into a whnf expr
             follow_indirs(apply->f);
             NodePtr newf = subst->var <= apply->f->depth
                          ? new (allocate_node<SubstNode>()) SubstNode(
@@ -227,6 +241,23 @@ NodePtr Interp::substitute(SubstNode* subst) {
 
             return new (allocate_node<ApplyNode>()) ApplyNode(
                 newdepth, newf, newx);
+        }
+        break; case NODETYPE_UNEVAL: {
+            UnevalNode* uneval = subst->body.get_subtype<UnevalNode>();
+
+            follow_indirs(uneval->alta);
+            NodePtr newa = subst->var <= uneval->alta->depth
+                         ? new (allocate_node<SubstNode>()) SubstNode(
+                                newdepth, uneval->alta, subst->var, subst->arg, subst->shift, subst->memo)
+                         : uneval->alta;
+            
+            follow_indirs(uneval->altb);
+            NodePtr newb = subst->var <= uneval->altb->depth
+                         ? new (allocate_node<SubstNode>()) SubstNode(
+                                newdepth, uneval->altb, subst->var, subst->arg, subst->shift, subst->memo)
+                         : uneval->altb;
+
+            return new (allocate_node<UnevalNode>()) UnevalNode(newdepth, newa, newb);
         }
         break; case NODETYPE_INDIR: {
             throw std::runtime_error("Indir nodes should have been squashed already");
@@ -284,9 +315,11 @@ private:
 };
 
 void Interp::run_gc() {
-    if (_backup_heap == 0) {
-        _backup_heap = new Heap(_heap->size());    
+    if (_backup_heap == 0 || _backup_heap->size() < _heap->size()) {
+        delete _backup_heap;
+        _backup_heap = new Heap(_heap->size());
     }
+        
     std::swap(_heap, _backup_heap);
 
     GCRef* const TERMINAL = (GCRef*)(-1);

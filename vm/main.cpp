@@ -14,7 +14,6 @@ void show_node_rec(Ptr<Node>& node, bool lambda_parens, bool apply_parens, std::
     }
     seen.insert(node.get_ptr());
 
-    std::cout << node->refcount << "{";
     switch (node->type) {
         break; case NODETYPE_LAMBDA: {
             LambdaNode* lambda = node.get_subtype<LambdaNode>();
@@ -45,11 +44,18 @@ void show_node_rec(Ptr<Node>& node, bool lambda_parens, bool apply_parens, std::
             show_node_rec(subst->arg, true, true, seen);
             std::cout << ")";
         }
+        break; case NODETYPE_UNEVAL: {
+            UnevalNode* uneval = node.get_subtype<UnevalNode>();
+            std::cout << "(";
+            show_node_rec(uneval->alta, true, true, seen);
+            std::cout << " $ ";
+            show_node_rec(uneval->altb, true, true, seen);
+            std::cout << ")";
+        }
         break; default: {
             assert(false);
         }
     }
-    std::cout << "}";
 }
 
 void inspect(Node* node) {

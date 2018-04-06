@@ -44,7 +44,7 @@ template<class T> class Ptr;
 
 class GCRef {
 public:
-    GCRef() : gc_next(0), refcount(0) {
+    GCRef() : gc_next(0), size_cost(0), refcount(0) {
         node_id = NODE_ID++;
     }
     virtual ~GCRef() { }
@@ -62,6 +62,7 @@ public:
     virtual GCRef* follow_indir() {
         return this;
     }
+    virtual void cost_hook() { }
 
     // Note that we do not take a const Ptr<GCRef>& target, because of a very
     // subtle bug if you try to indirect a node to one of its members.  The
@@ -84,6 +85,7 @@ public:
     }
 
     GCRef* gc_next;
+    float size_cost;
     int refcount;
     // For debugging
     int node_id;

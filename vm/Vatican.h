@@ -32,10 +32,6 @@ struct Node : public GCRef {
         : depth(depth), blocked(blocked), type(type)
     { }
 
-    // This is a typesig change -- if you follow indirs on a node, you get
-    // a node again.
-    Node* follow_indir() { return this; }
-
     depth_t depth;
     bool blocked;
     NodeType type;
@@ -147,6 +143,8 @@ class Interp {
 
     NodePtr substitute_memo(struct SubstNode* subst);
     NodePtr substitute(struct SubstNode* subst);
+    
+    void calc_size_costs();
 
     template<class T> 
     void* allocate_node() {
@@ -309,14 +307,64 @@ struct UnevalNode : public Node {
         : Node(NODETYPE_UNEVAL, false, depth)
         , alta(alta)
         , altb(altb)
+        , choice(CHOICE_UNDECIDED)
     { }
+
+    enum Choice { CHOICE_UNDECIDED, CHOICE_A, CHOICE_B };
 
     NodePtr alta;
     NodePtr altb;
+    Choice choice;
 
     void visit(GCVisitor* visitor) {
-        visitor->visit(altb);
-        visitor->visit(alta);
+        switch (choice) {
+            break; case CHOICE_UNDECIDED: {
+                if (alta) visitor->visit(alta);
+                if (altb) visitor->visit(altb);
+            }
+            break; case CHOICE_A: {
+                visitor->visit(alta);
+                altb = 0;
+            }
+            break; case CHOICE_B: {
+                visitor->visit(altb);
+                alta = 0;
+            }
+        }
+    }
+
+    void cost_hook() {
+        if (alta && altb) {
+            // If one of the costs is -1 that means we are pointing back to
+            // one of our parents, so if this node exists so does that one
+            // already.  So it's free.
+            float acost = alta->size_cost == -1 ? 0 : alta->size_cost;
+            float bcost = altb->size_cost == -1 ? 0 : altb->size_cost;
+
+            if (acost < bcost) {
+                choice = CHOICE_A;
+                size_cost = acost;
+            }
+            else {
+                choice = CHOICE_B;
+                size_cost = bcost;
+            }
+        }
+    }
+
+    GCRef* follow_indir() {
+        switch (choice) {
+            break; case CHOICE_UNDECIDED: {
+                return this;
+            }
+            break; case CHOICE_A: {
+                return static_cast<Ptr<GCRef>&>(alta)->follow_indir();
+            }
+            break; case CHOICE_B: {
+                return static_cast<Ptr<GCRef>&>(altb)->follow_indir();
+            }
+        }
+        
     }
 
     size_t size() { return sizeof(*this); }

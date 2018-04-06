@@ -156,11 +156,9 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
         break; case NODETYPE_UNEVAL: {
             UnevalNode* uneval = node.get_subtype<UnevalNode>();
             if (!uneval->alta) {
-                follow_indirs(uneval->altb);
                 node->indirect(uneval->altb);
             }
             else if (!uneval->altb) {
-                follow_indirs(uneval->alta);
                 node->indirect(uneval->alta);
             }
             else {
@@ -268,6 +266,83 @@ NodePtr Interp::substitute(SubstNode* subst) {
     }
 }
 
+class SizeCostGCVisitor : public GCVisitor {
+public:
+    typedef std::unordered_map<GCRef*, int> penalty_map_t;
+
+    SizeCostGCVisitor(penalty_map_t* circular_penalty) 
+        : _cost(0), _circular_penalty(circular_penalty)
+    { }
+
+    static int get_effective_refcount(const Ptr<GCRef>& p, penalty_map_t* penalty) {
+        auto i = penalty->find(p.get_ptr());
+        if (i != penalty->end()) {
+            return p->refcount - i->second;
+        }
+        else {
+            return p->refcount;
+        }
+    }
+
+    void visit(Ptr<GCRef>& ref) {
+        _cost += calc_cost(ref, _circular_penalty);
+    }
+
+    static float calc_cost(Ptr<GCRef>& ref, penalty_map_t* penalty) {
+        follow_indirs(ref);
+        if (ref->size_cost > 0) {
+            return ref->size_cost / get_effective_refcount(ref, penalty);
+        }
+        // Pun negative cost as a seen marker
+        else if (ref->size_cost < 0) {
+            auto i = penalty->find(ref.get_ptr());
+            if (i != penalty->end()) {
+                penalty->insert(std::make_pair(ref.get_ptr(), i->second+1));
+            }
+            else {
+                penalty->insert(std::make_pair(ref.get_ptr(), 1));
+            }
+            return 0;
+        }
+
+        ref->size_cost = -1;
+
+        SizeCostGCVisitor visitor(penalty);
+        ref->visit(&visitor);
+        ref->size_cost = ref->size() + visitor._cost;
+
+        // Gives unevaluation nodes a chance to make their choice and modify their
+        // effective size.  
+        ref->cost_hook();
+
+        return ref->size_cost / get_effective_refcount(ref, penalty);
+    }
+
+    bool alive(GCRef* ref) {
+        return ref->refcount > 0;  // XXX relies on being able to inspect dead nodes
+                                   // (in memo keys), if refcount = 0 frees the memory
+                                   // this would no longer work.  Then again neither
+                                   // would memo tables as implemented...
+    }
+
+    virtual void visit_memo_hook(MemoTable*, GCRef*, const NodePtr&) {
+        // Unused for size calculation
+        assert(false);
+    }
+    float _cost;
+private:
+    penalty_map_t* _circular_penalty;
+};
+
+void Interp::calc_size_costs() {
+    SizeCostGCVisitor::penalty_map_t penalty;
+
+    SizeCostGCVisitor root_visitor(&penalty);
+    for (RootPtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
+        i->visit(&root_visitor);
+    }
+}
+
 typedef std::unordered_multimap<GCRef*, std::pair<MemoTable*, NodePtr>> memo_hooks_t;
 
 class CopyingGCVisitor : public GCVisitor {
@@ -322,6 +397,8 @@ void Interp::run_gc() {
         
     std::swap(_heap, _backup_heap);
 
+    calc_size_costs();
+
     GCRef* const TERMINAL = (GCRef*)(-1);
 
     GCRef* top = TERMINAL;
@@ -354,6 +431,7 @@ void Interp::run_gc() {
             copied = node->copy(allocate_node(node->size()), &visitor);
             copied->gc_next = 0;
             copied->refcount = 0;
+            copied->size_cost = 0;
         }
         else {
             // (Except there are no externally allocated things)

@@ -67,9 +67,11 @@ public:
     void gc_indirect(GCRef* target);
 
     void inc() {
+        assert(refcount >= 0);
         refcount++;
     }
     void dec() {
+        assert(refcount >= 0);
         refcount--;
         if (refcount == 0) {
             destroy();
@@ -203,7 +205,13 @@ public:
     
     GCRef* follow_indir() {
         // XXX do this without the C stack
-        GCRef* r = _target->follow_indir();
+        if (!_target) {
+            throw std::runtime_error("Indirection cycle detected");
+        }
+        
+        Ptr<GCRef> temp = _target;
+        _target = 0;
+        GCRef* r = temp->follow_indir();
         _target = r;
         return r;
     }

@@ -235,10 +235,11 @@ struct MemoTable : public GCRef {
 
     MemoTable* copy(void* target, GCVisitor* visitor) {
         MemoTable* copied = new (target) MemoTable(
-            memo_table_t(table.size()/2, 
-                         std::hash<GCRef*>(),
-                         std::equal_to<GCRef*>(),
-                         table.get_allocator()));
+            //memo_table_t(table.size()/2, 
+            //             std::hash<GCRef*>(),
+            //             std::equal_to<GCRef*>(),
+            //             table.get_allocator()));
+            memo_table_t(table.get_allocator()));
         for (memo_table_t::iterator i = table.begin(); i != table.end(); ++i) {
             // This will immediately add if the key is alive
             visitor->visit_memo_hook(copied, i->first, i->second);

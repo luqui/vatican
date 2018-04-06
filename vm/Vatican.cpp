@@ -219,6 +219,8 @@ NodePtr Interp::substitute(SubstNode* subst) {
             LambdaNode* lambda = subst->body.get_subtype<LambdaNode>();
             
             follow_indirs(lambda->body);
+            // XXX We don't need this depth check, we know we will have to substitue,
+            // otherwise the subst node would have evaporated earlier.
             NodePtr substbody = subst->var <= lambda->body->depth
                               ? new (allocate_node<SubstNode>()) SubstNode(
                                    newdepth+1, lambda->body, subst->var, subst->arg, subst->shift, subst->memo)

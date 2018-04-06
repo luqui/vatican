@@ -338,8 +338,8 @@ struct UnevalNode : public Node {
             // If one of the costs is -1 that means we are pointing back to
             // one of our parents, so if this node exists so does that one
             // already.  So it's free.
-            float acost = alta->size_cost == -1 ? 0 : alta->size_cost;
-            float bcost = altb->size_cost == -1 ? 0 : altb->size_cost;
+            milibytes_t acost = alta->size_cost == -1 ? 0 : alta->size_cost;
+            milibytes_t bcost = altb->size_cost == -1 ? 0 : altb->size_cost;
 
             if (acost < bcost) {
                 choice = CHOICE_A;

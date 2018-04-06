@@ -390,14 +390,14 @@ private:
 };
 
 void Interp::run_gc() {
+    calc_size_costs();
+
     if (_backup_heap == 0 || _backup_heap->size() < _heap->size()) {
         delete _backup_heap;
         _backup_heap = new Heap(_heap->size());
     }
         
     std::swap(_heap, _backup_heap);
-
-    calc_size_costs();
 
     GCRef* const TERMINAL = (GCRef*)(-1);
 

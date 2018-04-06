@@ -323,10 +323,11 @@ void test_heap_resize() {
         std::cout << "FAIL - heap did not grow\n";
         throw test_failure();
     }
+    // Run GC before checking refcount because memo tables might have stray references.
     interp.run_gc();
     if (test->refcount != arg_refcount) {
         std::cout << "FAIL - reference count mismatch (" << arg_refcount << " -> " << test->refcount << ")\n";
-        //throw test_failure();
+        throw test_failure();
     }
     std::cout << "PASS\n";
 }

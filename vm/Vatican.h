@@ -382,14 +382,19 @@ struct UnevalNode : public Node {
 
 
 struct ApplyNode : public Node {
-    ApplyNode(depth_t depth, const NodePtr& f, const NodePtr& x)
+    ApplyNode(depth_t depth, const NodePtr& f, const NodePtr& x, bool locked)
         : Node(NODETYPE_APPLY, false, depth)
         , f(f)
         , x(x)
+        , locked(locked)
     { }
 
     NodePtr f;
     NodePtr x;
+
+    // A locked application will not be considered for an unevaluation node.
+    // Typically because it has already been considered and failed the test.
+    bool locked;
 
     void visit(GCVisitor* visitor) {
         visitor->visit(f);
@@ -458,7 +463,7 @@ class NodeMaker {
     RootPtr apply(const RootPtr& f, const RootPtr& x) {
         try {
             return RootPtr(_interp,
-                new (_interp->allocate_node<ApplyNode>()) ApplyNode(-1, f._ptr, x._ptr));
+                new (_interp->allocate_node<ApplyNode>()) ApplyNode(-1, f._ptr, x._ptr, false));
         }
         catch (time_to_gc_exception& e) {
             _interp->run_gc();
@@ -492,7 +497,7 @@ class NodeMaker {
     RootPtr fix() {
         try {
             NodePtr var = new (_interp->allocate_node<VarNode>()) VarNode(1);
-            NodePtr body = new (_interp->allocate_node<ApplyNode>()) ApplyNode(1, var, 0);
+            NodePtr body = new (_interp->allocate_node<ApplyNode>()) ApplyNode(1, var, 0, false);
 
             body.get_subtype<ApplyNode>()->x = body;
             NodePtr lambda = new (_interp->allocate_node<LambdaNode>()) LambdaNode(0, body);

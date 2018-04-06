@@ -136,9 +136,14 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
             NodePtr subst = new (allocate_node<SubstNode>()) SubstNode(apply_depth, subst_body, bind_depth, subst_arg, shift, memo);
 
             if (node->refcount > 1) {
-                NodePtr apply_copy = new (allocate_node<ApplyNode>()) ApplyNode(apply_depth, apply->f, apply->x);
-                Ptr<GCRef> uneval = new (allocate_node<UnevalNode>()) UnevalNode(apply_depth, apply_copy, subst);
-                node->indirect(uneval);
+                if (apply->locked) {
+                    node = subst;
+                }
+                else {
+                    NodePtr apply_copy = new (allocate_node<ApplyNode>()) ApplyNode(apply_depth, apply->f, apply->x, true);
+                    Ptr<GCRef> uneval = new (allocate_node<UnevalNode>()) UnevalNode(apply_depth, apply_copy, subst);
+                    node->indirect(uneval);
+                }
             }
             else {
                 node->indirect(subst);
@@ -238,7 +243,7 @@ NodePtr Interp::substitute(SubstNode* subst) {
                          : apply->x;
 
             return new (allocate_node<ApplyNode>()) ApplyNode(
-                newdepth, newf, newx);
+                newdepth, newf, newx, false);  // unlock, because we have more info now
         }
         break; case NODETYPE_UNEVAL: {
             UnevalNode* uneval = subst->body.get_subtype<UnevalNode>();

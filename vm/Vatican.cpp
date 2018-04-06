@@ -160,16 +160,8 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
         }
         break; case NODETYPE_UNEVAL: {
             UnevalNode* uneval = node.get_subtype<UnevalNode>();
-            if (!uneval->alta) {
-                node->indirect(uneval->altb);
-            }
-            else if (!uneval->altb) {
-                node->indirect(uneval->alta);
-            }
-            else {
-                // altb is the more evaluated one.
-                node = uneval->altb;
-            }
+            // altb is the more evaluated one.
+            node = uneval->altb;
             goto REDO;
         }
         break; case NODETYPE_INDIR: {

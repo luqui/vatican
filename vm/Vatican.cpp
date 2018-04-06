@@ -134,7 +134,7 @@ void Interp::reduce_whnf_rec(NodePtr& node) {
 
             void* mem = node.get_ptr();
             int refcount = node->refcount;
-            memo_table_t* memo = new (allocate_node<memo_table_t>()) memo_table_t(get_allocator<memo_table_t::value_type>());
+            MemoTable* memo = new (allocate_node<MemoTable>()) MemoTable(MemoTable::memo_table_t(get_allocator<MemoTable::value_t>()));
 
             // NB this overwrites node!
             // Assert to make sure the transmogrification is safe.
@@ -173,15 +173,15 @@ NodePtr Interp::substitute_memo(SubstNode* subst) {
         return subst->body;
     }
      
-    //memo_table_t::iterator i = subst->memo->find(subst->body.get_ptr());
-    //if (i != subst->memo->end()) {
-    //    return i->second;
-    //}
-    //int refcount = subst->body->refcount;  // substitute can return self
+    if (NodePtr value = subst->memo->lookup(subst->body)) {
+        return value;
+    }
+
+    int refcount = subst->body->refcount;  // substitute can return self
     NodePtr result = substitute(subst);
-    //if (refcount > 1) {
-    //    subst->memo->insert(std::pair<Node*, NodePtr>(subst->body.get_ptr(), result));
-    //}
+    if (refcount > 1) {
+        subst->memo->insert(subst->body.get_ptr(), result);
+    }
 
     return result;
 }
@@ -238,6 +238,7 @@ NodePtr Interp::substitute(SubstNode* subst) {
     }
 }
 
+typedef std::unordered_multimap<GCRef*, std::pair<MemoTable*, NodePtr>> memo_hooks_t;
 
 class CopyingGCVisitor : public GCVisitor {
 public:
@@ -258,12 +259,28 @@ public:
         }
     }
 
+    bool alive(GCRef* p) {
+        return _old_heap->contains(p) ? !!p->gc_next : true;
+    }
+
+    void visit_memo_hook(MemoTable* memo, GCRef* key, const NodePtr& value) {
+        key = key->follow_indir();
+        if (!_old_heap->contains(key)) {
+            // Add immediately
+            MemoTable::value_t pair(key, value);
+            memo->table.insert(pair);
+        }
+        else {
+            hooks->insert(std::make_pair(key, std::make_pair(memo, value)));
+        }
+    }
 
     bool work_left;
 
 private:
     GCRef** _gc_stack;
     Heap* _old_heap;
+    memo_hooks_t* hooks;
 };
 
 void Interp::run_gc() {
@@ -274,6 +291,7 @@ void Interp::run_gc() {
 
     GCRef* top = 0;
     GCRef* cleanup = 0;
+    memo_hooks_t hooks;
 
     // Visit root set
     for (RootPtr* i = _rootset_front._next; i != &_rootset_back; i = i->_next) {
@@ -296,7 +314,7 @@ void Interp::run_gc() {
         // externally allocated things).
         GCRef* copied;
         if (_backup_heap->contains(node)) {
-            copied = node->copy(allocate_node(node->size()));
+            copied = node->copy(allocate_node(node->size()), &visitor);
             copied->gc_next = 0;
             copied->refcount = 0;
         }
@@ -312,6 +330,20 @@ void Interp::run_gc() {
         if (node != copied) {
             node->gc_indirect(copied);
         }
+        
+        // Handle any memo hooks
+        auto range = hooks.equal_range(node);
+        for (memo_hooks_t::iterator i = range.first; i != range.second; ++i) {
+            i->second.first->table.insert(MemoTable::value_t(copied, i->second.second));
+            // The value was discovered, so mark it and put it on the stack.
+            visitor.visit(i->second.second);
+            // And make sure the table is on cleanup stack.
+            if (i->second.first->gc_next == 0) {
+                i->second.first->gc_next = cleanup;
+                cleanup = copied;
+            }
+        }
+        hooks.erase(range.first, range.second);
 
         // Add the node to the cleanup stack if it had uncopied children.
         if (visitor.work_left) {

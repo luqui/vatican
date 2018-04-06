@@ -165,7 +165,7 @@ class Interp {
 };
 
 
-struct LambdaNode : Node {
+struct LambdaNode : public Node {
     LambdaNode(depth_t depth, const NodePtr& body) 
         : Node(NODETYPE_LAMBDA, true, depth)
         , body(body)
@@ -177,7 +177,7 @@ struct LambdaNode : Node {
         visitor->visit(body);
     }
     size_t size() { return sizeof(*this); }
-    Node* copy(void* target) {
+    Node* copy(void* target, GCVisitor*) {
         return new (target) LambdaNode(*this);
     } 
     void destroy() {
@@ -211,11 +211,64 @@ HeapAllocator<T> Interp::get_allocator() {
     return HeapAllocator<T>(this);
 };
 
-typedef std::unordered_map<Node*, NodePtr, std::hash<Node*>, std::equal_to<Node*>, HeapAllocator<std::pair<Node* const, NodePtr>>> memo_table_t;
+
+struct MemoTable : public GCRef {
+    typedef std::pair<GCRef* const, NodePtr> value_t;
+    typedef std::unordered_map<GCRef*, NodePtr, std::hash<GCRef*>, std::equal_to<GCRef*>, HeapAllocator<value_t>> memo_table_t;
+
+    MemoTable(const memo_table_t& table) : table(table)
+    { }
+
+    memo_table_t table;
+
+    void visit(GCVisitor* visitor) {
+        for (memo_table_t::iterator i = table.begin(); i != table.end(); ++i) {
+            if (visitor->alive(i->first)) {
+                visitor->visit(i->second);
+            }
+        }
+    }
+
+    size_t size() {
+        return sizeof(*this);
+    }
+
+    MemoTable* copy(void* target, GCVisitor* visitor) {
+        MemoTable* copied = new (target) MemoTable(
+            memo_table_t(table.size()/2, 
+                         std::hash<GCRef*>(),
+                         std::equal_to<GCRef*>(),
+                         table.get_allocator()));
+        for (memo_table_t::iterator i = table.begin(); i != table.end(); ++i) {
+            // This will immediately add if the key is alive
+            visitor->visit_memo_hook(copied, i->first, i->second);
+        }
+        return copied;
+    }
+
+    void destroy() {
+        table.clear();
+    }
+
+    NodePtr lookup(const NodePtr& key) {
+        auto i = table.find(key.get_ptr());
+        if (i != table.end()) {
+            return i->second;
+        }
+        else {
+            return 0;
+        }
+    }
+
+    void insert(GCRef* key, const NodePtr& value) {
+        table.insert(value_t(key, value));
+    }
+};
 
 
-struct SubstNode : Node {
-    SubstNode(depth_t depth, const NodePtr& body, depth_t var, const NodePtr& arg, depth_t shift, memo_table_t* memo)
+
+struct SubstNode : public Node {
+    SubstNode(depth_t depth, const NodePtr& body, depth_t var, const NodePtr& arg, depth_t shift, const Ptr<MemoTable>& memo)
         : Node(NODETYPE_SUBST, false, depth)
         , body(body)
         , arg(arg)
@@ -226,20 +279,19 @@ struct SubstNode : Node {
         
     NodePtr body;
     NodePtr arg;
-    memo_table_t* memo;
+    Ptr<MemoTable> memo;
     depth_t var;
     depth_t shift;
 
     void visit(GCVisitor* visitor) {
         visitor->visit(body);
         visitor->visit(arg);
+        visitor->visit(memo);
     }
     
     size_t size() { return sizeof(*this); }
-    Node* copy(void* target) {
-        SubstNode* ret = new (target) SubstNode(*this);
-        ret->memo = new (memo->get_allocator().allocate_bytes(sizeof(memo_table_t))) memo_table_t(*memo, memo->get_allocator());
-        return ret;
+    Node* copy(void* target, GCVisitor*) {
+        return new (target) SubstNode(*this);
     }
     void destroy() {
         body = 0;
@@ -248,7 +300,7 @@ struct SubstNode : Node {
     }
 };
 
-struct ApplyNode : Node {
+struct ApplyNode : public Node {
     ApplyNode(depth_t depth, const NodePtr& f, const NodePtr& x)
         : Node(NODETYPE_APPLY, false, depth)
         , f(f)
@@ -266,7 +318,7 @@ struct ApplyNode : Node {
         visitor->visit(x);
     }
     size_t size() { return sizeof(*this); }
-    Node* copy(void* target) {
+    Node* copy(void* target, GCVisitor*) {
         return new (target) ApplyNode(*this);
     } 
     void destroy() {
@@ -276,14 +328,14 @@ struct ApplyNode : Node {
     }
 };
 
-struct VarNode : Node {
+struct VarNode : public Node {
     VarNode(depth_t depth)
         : Node(NODETYPE_VAR, true, depth)
     { }
 
     void visit(GCVisitor* visitor) { }
     size_t size() { return sizeof(*this); }
-    Node* copy(void* target) {
+    Node* copy(void* target, GCVisitor*) {
         return new (target) VarNode(*this);
     } 
     void destroy() {
@@ -295,15 +347,14 @@ private:
     padding<sizeof(NodePtr)> _indir_padding;
 };
 
-struct PrimNode : Node 
-{
+struct PrimNode : public Node {
     PrimNode()
         : Node(NODETYPE_PRIM, true, 0)
     { }
 
     void visit(GCVisitor* visitor) { }
     size_t size() { return sizeof(*this); }
-    Node* copy(void* target) {
+    Node* copy(void* target, GCVisitor*) {
         return new (target) PrimNode(*this);
     } 
     void destroy() {

@@ -44,13 +44,13 @@ template<class T> class Ptr;
 
 class GCRef {
 public:
-
     GCRef() : gc_next(0), refcount(0) {
         node_id = NODE_ID++;
     }
     virtual ~GCRef() { }
     virtual void visit(GCVisitor* visitor) = 0;
-    virtual GCRef* copy(void* target) = 0;
+    // TODO separate GCVisitor into GCContext that makes sense with the copy.
+    virtual GCRef* copy(void* target, class GCVisitor* visitor) = 0;
     virtual size_t size() = 0;
     virtual void destroy() {
         // Unnecessary, but clear the memory for debugging to make sure we
@@ -137,6 +137,10 @@ class Ptr {
         return *reinterpret_cast<Ptr<U>*>(this);
     }
 
+    operator bool() {
+        return _ptr != 0;
+    }
+
     T* operator-> () const {
         assert(!_ptr || dynamic_cast<T*>(static_cast<GCRef*>(_ptr)));
         return _ptr;
@@ -163,11 +167,15 @@ void follow_indirs(Ptr<T>& p) {
     p = r;
 }
 
-
 class GCVisitor {
 public:
     virtual ~GCVisitor() { }
     virtual void visit(Ptr<GCRef>&) = 0;
+    virtual bool alive(GCRef*) = 0;
+    // Hook a conditional insert -- if GCRef* is found to exist, then
+    // put its moved copy in the memo table pointing to the given NodePtr
+    // value.
+    virtual void visit_memo_hook(struct MemoTable*, GCRef* key, const Ptr<struct Node>& value) = 0;
 };
 
 
@@ -181,7 +189,7 @@ public:
         // XXX or maybe _target->visit(visitor)  ?
     }
 
-    GCRef* copy(void* mem) {
+    GCRef* copy(void* mem, GCVisitor*) {
         assert(false);  // Indirections should be followed, not copied.
     }
 
@@ -217,7 +225,7 @@ public:
         assert(false);
     }
 
-    GCRef* copy(void* mem) {
+    GCRef* copy(void* mem, GCVisitor*) {
         // We shouldn't ever be copying one of these.
         assert(false);
     }

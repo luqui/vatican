@@ -286,16 +286,16 @@ void test_heap_resize() {
 
     // λf x. f (f (f (f (f (f (f (f (f (f x)))))))))
     RootPtr ten = lib.lambda(lib.lambda(
-          //lib.apply(lib.var(1),
-          //lib.apply(lib.var(1),
-          //lib.apply(lib.var(1),
-          //lib.apply(lib.var(1),
-          //lib.apply(lib.var(1),
-          //lib.apply(lib.var(1),
-          //lib.apply(lib.var(1),
-          //lib.apply(lib.var(1),
-          //lib.apply(lib.var(1),
-          lib.apply(lib.var(1), lib.var(0))));//)))))))));
+          lib.apply(lib.var(1),
+          lib.apply(lib.var(1),
+          lib.apply(lib.var(1),
+          lib.apply(lib.var(1),
+          lib.apply(lib.var(1),
+          lib.apply(lib.var(1),
+          lib.apply(lib.var(1),
+          lib.apply(lib.var(1),
+          lib.apply(lib.var(1),
+          lib.apply(lib.var(1), lib.var(0)))))))))))));
     lib.fixup(ten);
     
     RootPtr thousand = lib.apply(lib.apply(times, lib.apply(lib.apply(times, ten), ten)), ten);
@@ -318,6 +318,7 @@ void test_heap_resize() {
         show_node(test);
         throw test_failure();
     }
+    std::cout << "Heap size = " << interp.heap_size() << "\n";
     if (!(interp.heap_size() > heap_size)) {
         std::cout << "FAIL - heap did not grow\n";
         throw test_failure();

@@ -269,44 +269,44 @@ void test_heap_resize() {
     RootPtr arg = lib.prim();
 
     {
-    RootPtr idf = lib.lambda(lib.var(0));
-    lib.fixup(idf);
+        RootPtr idf = lib.lambda(lib.var(0));
+        lib.fixup(idf);
 
-    // λf x. x
-    RootPtr zero = lib.lambda(lib.lambda(lib.var(0)));
-    lib.fixup(zero);
-    
-    // λn f x. f (n f x)
-    RootPtr succ = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.var(1), lib.apply(lib.apply(lib.var(2), lib.var(1)), lib.var(0))))));
-    lib.fixup(succ);
+        // λf x. x
+        RootPtr zero = lib.lambda(lib.lambda(lib.var(0)));
+        lib.fixup(zero);
+        
+        // λn f x. f (n f x)
+        RootPtr succ = lib.lambda(lib.lambda(lib.lambda(lib.apply(lib.var(1), lib.apply(lib.apply(lib.var(2), lib.var(1)), lib.var(0))))));
+        lib.fixup(succ);
 
-    // λx y. x (y succ) zero
-    RootPtr times = lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(1), lib.apply(lib.var(0), succ)), zero)));
-    lib.fixup(times);
+        // λx y. x (y succ) zero
+        RootPtr times = lib.lambda(lib.lambda(lib.apply(lib.apply(lib.var(1), lib.apply(lib.var(0), succ)), zero)));
+        lib.fixup(times);
 
-    // λf x. f (f (f (f (f (f (f (f (f (f x)))))))))
-    RootPtr ten = lib.lambda(lib.lambda(
-          lib.apply(lib.var(1),
-          lib.apply(lib.var(1),
-          lib.apply(lib.var(1),
-          lib.apply(lib.var(1),
-          lib.apply(lib.var(1),
-          lib.apply(lib.var(1),
-          lib.apply(lib.var(1),
-          lib.apply(lib.var(1),
-          lib.apply(lib.var(1),
-          lib.apply(lib.var(1), lib.var(0)))))))))))));
-    lib.fixup(ten);
-    
-    RootPtr thousand = lib.apply(lib.apply(times, lib.apply(lib.apply(times, ten), ten)), ten);
-    lib.fixup(thousand);
+        // λf x. f (f (f (f (f (f (f (f (f (f x)))))))))
+        RootPtr ten = lib.lambda(lib.lambda(
+              lib.apply(lib.var(1),
+              lib.apply(lib.var(1),
+              lib.apply(lib.var(1),
+              lib.apply(lib.var(1),
+              lib.apply(lib.var(1),
+              lib.apply(lib.var(1),
+              lib.apply(lib.var(1),
+              lib.apply(lib.var(1),
+              lib.apply(lib.var(1),
+              lib.apply(lib.var(1), lib.var(0)))))))))))));
+        lib.fixup(ten);
+        
+        RootPtr thousand = lib.apply(lib.apply(times, lib.apply(lib.apply(times, ten), ten)), ten);
+        lib.fixup(thousand);
 
-    arg = lib.prim();
-    lib.fixup(arg);
+        arg = lib.prim();
+        lib.fixup(arg);
 
-    // thousand idf (thousand idf prim)
-    test = lib.apply(lib.apply(thousand, idf), lib.apply(lib.apply(thousand, idf), arg));
-    lib.fixup(test);
+        // thousand idf (thousand idf prim)
+        test = lib.apply(lib.apply(thousand, idf), lib.apply(lib.apply(thousand, idf), arg));
+        lib.fixup(test);
     }
     show_node(test);
     show_node(arg);
@@ -323,6 +323,7 @@ void test_heap_resize() {
         std::cout << "FAIL - heap did not grow\n";
         throw test_failure();
     }
+    interp.run_gc();
     if (test->refcount != arg_refcount) {
         std::cout << "FAIL - reference count mismatch (" << arg_refcount << " -> " << test->refcount << ")\n";
         //throw test_failure();

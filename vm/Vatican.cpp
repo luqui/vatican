@@ -289,7 +289,9 @@ void Interp::run_gc() {
     }
     std::swap(_heap, _backup_heap);
 
-    GCRef* top = 0;
+    GCRef* const TERMINAL = (GCRef*)(-1);
+
+    GCRef* top = TERMINAL;
     GCRef* cleanup = 0;
     memo_hooks_t hooks;
 
@@ -299,12 +301,12 @@ void Interp::run_gc() {
         i->visit(&visitor);
     }
 
-    while (top) {
+    while (top != TERMINAL) {
         // Remove the node from the gc stack
         GCRef* node = top;
         top = node->gc_next;
-        node->gc_next = (GCRef*)(-1);  // We won't traverse again, but we use this as
-                                       // a "seen" marker.  Cleared when copied.
+        node->gc_next = TERMINAL;   // We won't traverse again, but we use this as
+                                    // a "seen" marker.  Cleared when copied.
         
         assert(node->refcount > 0);
         

@@ -188,7 +188,8 @@ NodePtr Interp::substitute_memo(SubstNode* subst) {
 
     int refcount = subst->body->refcount;  // substitute can return self
     NodePtr result = substitute(subst);
-    if (refcount > 1) {
+    if (refcount > 1) { // XXX removing this check seems to improve things time-wise
+                        // See Thyer p. 64 for maybe why.
         subst->memo->insert(subst->body.get_ptr(), result);
     }
 

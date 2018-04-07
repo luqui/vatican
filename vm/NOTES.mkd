@@ -117,3 +117,136 @@ library functions.  Note that the above tracking is irrelevant for nodes whose
 "space to be freed" is zero -- who cares?  And if something is directly
 reachable from the root set, then it will not be freed, so you can have a
 bazillion references to it and it won't clutter up these maps.
+
+Explicit Sharing
+----------------
+
+Here is a passage I just found on page 64 of Thyer's paper...
+
+> If details of which nodes are shared were to be maintained by using
+> reference counting, and memo-tables only checked and updated for shared nodes,
+> sharing would still be lost. 
+
+which was like my whole thing.  He gives the example (translated)
+
+    \a. let c = (a * a, a + a)
+        in (c, snd c)
+
+in which the `a+a` node will be marked as shared if `snd c` is reduced, and
+not otherwise.
+
+The notation I'm using to describe his graph though gives me an idea.  It seems
+there is no need for memo tables in this way of stating it -- a single
+substitution is created for `c`, which is precisely what we would have used a
+memo table to share.  What if we have "share nodes" which occur at the lowest
+common ancestor of the shared node.  Then we could ensure that substitution on
+such nodes only happens once.
+
+    power = \n x -> 
+        let n' = n in 
+        if n' == 0 
+            then 1 
+            else let x' = x in x' * power (n'-1) x'
+
+    power 1 a
+    = (x=a) (n=1) let n' = n in
+                  if n' == 0
+                     then 1
+                     else let x' = x in x' * power (n'-1) x'
+    = (x=a) let n' = (n=1) n in
+            if n' == 0
+               then 1
+               else let x' = x in x' * power (n'-1) x'
+    = let n' = (n=1) n in
+      (x=a) if n' == 0
+               then 1
+               else let x' = x in x' * power (n'-1) x'
+    = let n' = 1 in
+      (x=a) if n' == 0
+               then 1
+               else let x' = x in x' * power (n'-1) x'
+    -- We have reached a value (depth 0), so replace the let cell with 
+    -- an indirection.
+    = (x=a) if 1 == 0
+               then 1
+               else let x' = x in x' * power (1-1) x'
+    = (x=a) let x' = x in x' * power (1-1) x'
+    = let x' = (x=a) x in x' * power (1-1) x'
+    -- If a was a let cell then we would replace x' with an indirection
+    = let x' = a in x' * power (1-1) x'
+    = let x' = a in
+      x' * (x=x') (n=1-1) let n' = n in                              
+                          if n' == 0                                 
+                             then 1                                  
+                             else let x' = x in x' * power (n'-1) x' 
+    = let x' = a in
+      x' * let n' = (n=1-1) n in 
+           (x=x') if n' == 0
+                     then 1
+                     else let x'' = x in x'' * power (n-1) x''
+    = let x' = a in
+      x' * let n' = 0 in 
+           (x=x') if n' == 0
+                     then 1
+                     else let x'' = x in x'' * power (n-1) x''
+    = let x' = a in
+      x' * (x=x') if 0 == 0
+                     then 1
+                     else let x'' = x in x'' * power (n-1) x''
+    = let x' = a in
+      x' * (x=x') 1
+    = x' * 1
+
+Yeah that's how it works.  I wasn't expecting the "indirection" points, 
+but I think that might save me from my worries about let cells stacking up
+and being worse than memo tables beacuse you have to traverse through them
+each time you apply the function.  But we eliminate a let cell if the value
+becomes depth 0 (a top level value which will never be substituted) or if it
+already points to another let cell.  It's also interesting to note that a
+substitution never branches -- you always substitute just one side of an
+expression.  There may be interesting optimizations that leverage that.
+
+Let's try Thyer's example:
+
+    \a -> let c = let a' = a in (a' * a', a' + a')
+          in (c, snd c)
+
+No matter what we evaluate first, we should share the arithmetic operations.
+
+    (a=2) let c = (a * a, a + a)
+          in (c, snd c)
+    let c = (a=2) (a * a, a + a)
+          in (c, snd c)
+    
+It is clear that sharing will work.  
+
+    (.) = \f g x -> f (g x)
+    two = \f x -> let f' = f in f' (f' x)
+
+    -- closed expressions need not be shared
+    (two . two) a z
+    = (.) two two a z
+    = ((x=a) (g=two) (f=two) f (g x)) z
+    = ((x=a) (g=two) two (g x)) z
+    = ((x=a) (g=two) (f=g x) \x1 -> let f' = f in f' (f' x1)) z
+    = (\x1 -> (x=a) (g=two) (f=g x) let f' = f in f' (f' x1)) z
+    = (x1=z) (x=a) (g=two) (f=g x) let f' = f in f' (f' x1)
+    = (x1=z) (x=a) (g=two) let f' = (f=g x) f in f' (f' x1)
+    = (x1=z) (x=a) (g=two) let f' = g x in f' (f' x1)
+    = (x1=z) (x=a) let f' = (g=two) g x in f' (f' x1)
+    = (x1=z) (x=a) let f' = two x in f' (f' x1)
+    = (x1=z) (x=a) let f' = (f=x) (\x2 -> let f'1 = f in f'1 (f'1 x2)) x in f' (f' x1)
+    = (x1=z) (x=a) let f' = \x2 -> (f=x) let f'1 = f in f'1 (f'1 x2) in f' (f' x1)
+    = (x1=z) (x=a) let f' = \x2 -> let f'1 = (f=x) f in f'1 (f'1 x2) in f' (f' x1)
+    = (x1=z) (x=a) let f' = \x2 -> 
+                        let f'1 = x in f'1 (f'1 x2)
+                   in f' (f' x1)
+    = (x1=z) (x=a) let b = let f'1 = x in f'1 (f'1 x2)
+                   let f' = \x2 -> b
+                   in (x2=f' x1) b
+
+I seem to have made a mistake... we have a (a x2).  The a is just a plain
+logic error I think, the x2 might be an algorithm flaw.  Observe how x2 is
+"technically" in scope since it will only be used under the lambda, but
+it isn't really well-formed as a let.  I don't know if this is okay.  For
+example it might mean that b would simultaneously have multiple depths.

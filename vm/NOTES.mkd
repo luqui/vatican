@@ -245,8 +245,98 @@ It is clear that sharing will work.
                    let f' = \x2 -> b
                    in (x2=f' x1) b
 
-I seem to have made a mistake... we have a (a x2).  The a is just a plain
-logic error I think, the x2 might be an algorithm flaw.  Observe how x2 is
-"technically" in scope since it will only be used under the lambda, but
-it isn't really well-formed as a let.  I don't know if this is okay.  For
-example it might mean that b would simultaneously have multiple depths.
+Observe how x2 is "technically" in scope since it will only be used under the
+lambda, but it isn't really well-formed as a let.  I don't know if this is okay.
+For example it might mean that b could simultaneously have multiple depths.
+    
+    = (x1=z) (x=a) let x3 = x
+                   let b2 = f'1 (f'1 x2)
+                   let b = let f'1 = x3 in b2
+                   let f' = \x2 -> b
+                   in let f'1 = x3 in (x2=f' x1) b2
+    = (x1=z) (x=a) let x3 = x
+                   let b2 = x3 (x3 x2)
+                   let b = let f'1 = x3 in b2
+                   let f' = \x2 -> b
+                   in (x2=f' x1) b2
+    = (x1=z) (x=a) let x3 = x
+                   let b3 = x3 x2
+                   let b2 = x3 b3
+                   let b = let f'1 = x3 in b2
+                   let f' = \x2 -> b
+                   in x3 ((x2=f' x1) b3)
+    = (x1=z) (x=a) let x3 = x
+                   let b4 = x2
+                   let b3 = x3 b4
+                   let b2 = x3 b3
+                   let b = let f'1 = x3 in b2
+                   let f' = \x2 -> b
+                   in x3 (x3 ((x2=f' x1) b4))
+    = (x1=z) (x=a) let x3 = x
+                   let b4 = x2
+                   let b3 = x3 b4
+                   let b2 = x3 b3
+                   let b = let f'1 = x3 in b2
+                   let f' = \x2 -> b
+                   in x3 (x3 (f' x1))
+    = (x1=z) let x3 = (x=a) x
+             let b4 = x2
+             let b3 = x3 b4
+             let b2 = x3 b3
+             let b = let f'1 = x3 in b2
+             let f' = \x2 -> b
+             in x3 (x3 (f' x1))
+    = (x1=z) let x3 = a
+             let b4 = x2
+             let b3 = x3 b4
+             let b2 = x3 b3
+             let b = let f'1 = x3 in b2
+             let f' = \x2 -> b
+             in x3 (x3 (f' x1))
+    = let x3 = a
+      let b4 = x2
+      let b3 = x3 b4
+      let b2 = x3 b3
+      let b = let f'1 = x3 in b2
+      let f' = \x2 -> b
+      in x3 (x3 (f' ((x1=z)x1)))
+
+We can see that this is close to the normal form.   Suppose something continued
+to force the function.
+    
+    = let x3 = a
+      let b4 = x2
+      let b3 = x3 b4
+      let b2 = x3 b3
+      let b = let f'1 = x3 in b2
+      let f' = \x2 -> b
+      in x3 (x3 ((x2=(x1=z)x1)b))
+
+`f'` is collected by the garbage collector at least, and maybe earlier by
+some amortized function compacter, or -- god forbid -- refcounts (which might
+be able to elide the circular references problem because of explcit sharing,
+somehow).
+
+    = let x3 = a
+      let b4 = x2
+      let b3 = x3 b4
+      let b2 = x3 b3
+      in x3 (x3 ((x2=(x1=z)x1)b2))
+    = let x3 = a
+      let b4 = x2
+      let b3 = x3 b4
+      in x3 (x3 (x3 ((x2=(x1=z)x1)b3)))
+    = let x3 = a
+      let b4 = x2
+      in x3 (x3 (x3 (x3 ((x2=(x1=z)x1)b4))))
+    = let x3 = a
+      in x3 (x3 (x3 (x3 ((x1=z)x1))))
+    = let x3 = a
+      in x3 (x3 (x3 (x3 z)))
+
+So there are some interesting properties here.  It looks like my fears of these
+cells essentially emulating memo tables are at least partially true.  We ended
+up creating a let cell for each application in the shared expression.  I was
+about to say but then they die out as things progress, but so do memo tables
+because they are weak references.  I do not think this strategy is an
+improvement.  :-(

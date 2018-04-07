@@ -340,3 +340,8 @@ up creating a let cell for each application in the shared expression.  I was
 about to say but then they die out as things progress, but so do memo tables
 because they are weak references.  I do not think this strategy is an
 improvement.  :-(
+
+The one thing that is interesting is that substitutions will substitute into
+exactly one place.  So as we are building this memo-table of lets, we could
+be organizing it so that we know exactly where to substitute into it, perhaps
+even in log time.

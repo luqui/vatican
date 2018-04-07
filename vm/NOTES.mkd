@@ -217,8 +217,9 @@ No matter what we evaluate first, we should share the arithmetic operations.
           in (c, snd c)
     let c = (a=2) (a * a, a + a)
           in (c, snd c)
-    
-It is clear that sharing will work.  
+
+It is clear that sharing will work.  Let's try an example that has pathological
+behavior with memo tables.
 
     (.) = \f g x -> f (g x)
     two = \f x -> let f' = f in f' (f' x)
@@ -245,7 +246,7 @@ It is clear that sharing will work.
                    let f' = \x2 -> b
                    in (x2=f' x1) b
 
-Observe how x2 is "technically" in scope since it will only be used under the
+Observe how `x2` is "technically" in scope since it will only be used under the
 lambda, but it isn't really well-formed as a let.  I don't know if this is okay.
 For example it might mean that b could simultaneously have multiple depths. The
 same things happens with f'1 in the next step, where it is allocated later than
@@ -260,8 +261,8 @@ the stack.
                    let f'1 = x3 
                    in (x2=f' x1) b2
 
-There is an opportunity to replace f' with an indirection to x3 straight away
-but I am afraid it is not a valid move in general.  So I will leave it.
+There is an opportunity to replace `f'1` with an indirection to `x3` straight
+away but I am afraid it is not a valid move in general.  So I will leave it.
 
     = (x1=z) (x=a) let x3 = x
                    let b3 = f'1 x2
@@ -302,11 +303,11 @@ but I am afraid it is not a valid move in general.  So I will leave it.
 And here it is in HNF.  It looks big but it also suggests a very compact
 representation in which all (most?) the let cells are merged as one big table.
 Copying it is a lot like copying "depth first" up to the point we get to the
-expression, which ought to be easier for a computer.  Further, only x3 and b3
-have free variables, so we don't need to substitute into the others.  This feels
-like it could be the power of this approach -- as we elaborate the function
-body, we build up an optimized representation for future substitutions.   Let's
-keep evaluating until we get to NF.
+expression, which ought to be easier for a computer.  Further, only `x3` and
+`b3` have free variables, so we don't need to substitute into the others.  This
+feels like it could be the power of this approach -- as we elaborate the
+function body, we build up an optimized representation for future substitutions.
+Let's keep evaluating until we get to NF.
 
     = let x3 = a
       let b3 = f'1 x2
@@ -337,8 +338,8 @@ keep evaluating until we get to NF.
       let f'1 = x3 
       in x3 (x3 ((x1=z) (x2=f' x1) x2))
 
-I just pushed x1 through x3 because x1 did not occur in x3.  I wonder how I
-knew that, though.  Is depth tracking enough?
+I just pushed `x1` through `x3` because `x1` did not occur in `x3`.  I wonder
+how I knew that, though.  Is depth tracking enough?
 
     = let x3 = a
       let b3 = f'1 x2
@@ -356,7 +357,7 @@ knew that, though.  Is depth tracking enough?
       in x3 (x3 ((x1=z) (x2=x1) b))
 
 Garbage collect `f'`
-    
+
     = let x3 = a
       let b3 = f'1 x2
       let b2 = f'1 b3
@@ -370,7 +371,7 @@ Garbage collect `f'`
       let f'1 = x3 
       in x3 (x3 ((x1=z) (x2=x1) b))
 
-Here we have substituted f' again, which was our shared function argument.
+Here we have substituted `f'` again, which was our shared function argument.
 We don't need to rebuild our "memo table", it's already been built.  
 
     = let x3 = a
@@ -380,25 +381,25 @@ We don't need to rebuild our "memo table", it's already been built.
       let f'1 = x3 
       in x3 (x3 ((x1=z) (x2=x1) let f'1 = x3 in b2))
 
-Here we have rebound f'1 while there was already an f'1 in scope.  It's bound
-to the same thing as before but it didn't necessarily have to be.  E.g. if x3
-had been a free variable rather than referring to a higher cell.  So there's
-some kind of stack.
+Here we have rebound `f'1` while there was already an `f'1` in scope.  It's
+bound to the same thing as before but it didn't necessarily have to be.  E.g. if
+`x3` had been a free variable rather than referring to a higher cell.  So
+there's some kind of stack business going on.
 
-Note that b and the outer f'1 are no longer used. So by the time the garbage
+Note that `b` and the outer `f'1` are no longer used. So by the time the garbage
 collector runs (or maybe we can do it automatically, not because of refcounting,
 but because of linearity), it goes:
-    
+
     = let x3 = a
       let b3 = f'1 x2
       let b2 = f'1 b3
       in x3 (x3 ((x1=z) (x2=x1) let f'1 = x3 in b2))
 
-There is an optimization opportunity when we see (x1=z) (x2=x1); clearly this
-should become (x2=z).  Again, we know there is only one reference to x1 so this
-is safe.  There was an opportunity earlier with (x1=z) (x2=f' x1), maybe we
-should always substitute into substitutions. 
-    
+There is an optimization opportunity when we see `(x1=z) (x2=x1)`; clearly this
+should become `(x2=z`).  Again, we know there is only one reference to `x1` so
+this is safe.  There was an opportunity earlier with `(x1=z) (x2=f' x1)`, maybe
+we should always substitute into substitutions. 
+
     = let x3 = a
       let b3 = f'1 x2
       let b2 = f'1 b3

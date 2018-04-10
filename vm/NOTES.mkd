@@ -462,3 +462,7 @@ represented by a single code pointer that does all the work (is that what would
 happen?) is that we need to later be prepared to inline that code.  Perhaps we
 could keep both a "fast path" code reference and a "slow path" reference for
 inlining.
+
+Random thought: as we build the "local heap" of a function, if we store it as
+a flat array, we will need to resize it as it grows.  We could locally garbage
+collect at that moment, just like we do with the main heap,

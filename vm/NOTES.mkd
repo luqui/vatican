@@ -121,7 +121,7 @@ bazillion references to it and it won't clutter up these maps.
 Explicit Sharing
 ----------------
 
-Here is a passage I just found on page 64 of Thyer's paper...
+Here is a passage I just found on page 64 of [Thyer's paper][Thyer 1999]...
 
 > If details of which nodes are shared were to be maintained by using
 > reference counting, and memo-tables only checked and updated for shared nodes,
@@ -466,3 +466,207 @@ inlining.
 Random thought: as we build the "local heap" of a function, if we store it as
 a flat array, we will need to resize it as it grows.  We could locally garbage
 collect at that moment, just like we do with the main heap,
+
+------------------------------------------------------------------------------
+
+In [Supercompilation by Evaluation][Bolingbroke 2010], they claim their strategy
+can optimize
+
+    let ones = 1 : ones in map (+1) ones
+
+to
+
+    let xs = 2 : xs in xs
+
+and I would like to achieve a similar result at runtime.  I tried manual
+evaluation of this in Thyer but made a few mistakes and didn't want to redo, but
+I think Thyer does this. But my new explicit sharing form does not.
+
+      let map = \f -> let f1 = f   -- f only occurs once syntactically , but it
+                                   -- is used in a shared binding so it is 
+                                   -- shared
+                      let mapf = \xs -> case xs of
+                                    [] -> []
+                                    (a:b) -> f1 a : mapf b
+                      in mapf
+          ones = 1 : ones
+      in map (+1) ones
+    = let B = let f1 = f 
+                  mapf = \xs -> case xs of [] -> []; (a:b) -> f1 a : mapf b 
+               in mapf
+          ones = 1 : ones
+      in ((f=(+1)) B) ones
+    = let ones = 1 : ones
+      in ((f=(+1)) 
+          let f2 = f
+              mapf1 = \xs -> case xs of [] -> []; (a:b) -> f2 a : mapf1 b) 
+         ones
+    = let ones = 1 : ones
+      in (let f2 = (f=(+1)) f
+              mapf1 = \xs -> case xs of [] -> []; (a:b) -> f2 a : mapf1 b)
+           in mapf1
+         ones
+    = let ones = 1 : ones
+          f2 = (f=(+1)) f
+          mapf1 = \xs -> case xs of [] -> []; (a:b) -> f2 a : mapf1 b
+      in mapf1 ones
+
+The following step is possibly problematic -- we duplicate the case when we
+should have a chance to share it.  We could share by memoizing a substitution
+between two shared nodes (i.e. a shared argument and a shared body).  Let's try
+it.
+    
+    = let ones = 1 : ones
+          f2 = (f=(+1)) f
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> f2 a : mapf1 b
+      in (xs=ones) B1
+    = let ones = 1 : ones
+          f2 = (f=(+1)) f
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> f2 a : mapf1 b
+          xs=ones_B1 = (xs=ones) B1
+      in xs=ones_B1
+    = let ones = 1 : ones
+          f2 = (f=(+1)) f
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = f2 a : mapf1 b
+          xs=ones_B1 = case 1:ones of [] -> []; (a:b) -> B2
+      in xs=ones_B1
+    = let ones = 1 : ones
+          f2 = (f=(+1)) f
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = f2 a : mapf1 b
+          xs=ones_B1 = (b=ones) (a=1) B2
+      in xs=ones_B1
+    = let ones = 1 : ones
+          f2 = (f=(+1)) f
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = B3 : B4
+          xs=ones_B1 = B5 : B6
+          B3 = f2 a
+          B4 = mapf1 b
+          B5 = (a=1) B3
+          B6 = (b=ones) B4
+      in B5 : B6
+    = let ones = 1 : ones
+          f2 = (+1)
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = B3 : B4
+          xs=ones_B1 = 2 : B6
+          B3 = f2 a
+          B4 = mapf1 b
+          B6 = (b=ones) B4
+      in 2 : B6
+    = let ones = 1 : ones
+          f2 = (+1)
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = B3 : B4
+          xs=ones_B1 = 2 : b=ones_B4
+          B3 = f2 a
+          B4 = mapf1 b
+          b=ones_B4 = (b=ones) B4
+      in 2 : b=ones_B4
+    = let ones = 1 : ones
+          f2 = (+1)
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = B3 : B4
+          xs=ones_B1 = 2 : b=ones_B4
+          B3 = f2 a
+          B4 = mapf1 b
+          b=ones_B4 = (b=ones) (xs=b) B1
+      in 2 : b=ones_B4
+
+Here we substitute into the substitution.
+
+    = let ones = 1 : ones
+          f2 = (+1)
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = B3 : B4
+          xs=ones_B1 = 2 : b=ones_B4
+          B3 = f2 a
+          B4 = mapf1 b
+          b=ones_B4 = (xs=(b=ones) b) B1
+      in 2 : b=ones_B4
+
+We didn't memoize here because `(b=ones) b` is *not* a shared node.  I think
+this is a problem.
+
+    = let ones = 1 : ones
+          f2 = (+1)
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = B3 : B4
+          xs=ones_B1 = 2 : b=ones_B4
+          B3 = f2 a
+          B4 = mapf1 b
+          b=ones_B4 = case (xs=(b=ones) b) of [] -> []; (a:b) -> B2
+      in 2 : b=ones_B4
+    = let ones = 1 : ones
+          f2 = (+1)
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = B3 : B4
+          xs=ones_B1 = 2 : b=ones_B4
+          B3 = f2 a
+          B4 = mapf1 b
+          b=ones_B4 = case 1:ones of [] -> []; (a:b) -> B2
+      in 2 : b=ones_B4
+    = let ones = 1 : ones
+          f2 = (+1)
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = B3 : B4
+          xs=ones_B1 = 2 : b=ones_B4
+          B3 = f2 a
+          B4 = mapf1 b
+          b=ones_B4 = (b=ones) (a=1) B2
+      in 2 : b=ones_B4
+    = let ones = 1 : ones
+          f2 = (+1)
+          mapf1 = \xs -> B1
+          B1 = case xs of [] -> []; (a:b) -> B2
+          B2 = B3 : B4
+          xs=ones_B1 = 2 : b=ones_B4
+          B3 = f2 a
+          B4 = mapf1 b
+          b=ones_B4 = ((a=1) B3) : ((b=ones) B4)
+      in 2 : b=ones_B4
+    = let f2 = (+1)
+          B3 = f2 a
+          b=ones_B4 = B7 : b=ones_B4
+          B7 = (a=1) B3
+      in 2 : b=ones_B4
+    = let f2 = (+1)
+          B3 = f2 a
+          b=ones_B4 = B7 : b=ones_B4
+          B7 = (a=1) B3
+      in 2 : B7 : b=ones_B4
+    = let b=ones_B4 = 2 : b=ones_B4
+      in 2 : 2 : b=ones_B4
+
+It worked.  It worked about one step later than it seems like it ought've.
+That's pretty cool.  I did have to use memo tables, which is what I was trying
+to get away from.  But we are only memoizing (potentially) shared nodes, which
+is what I was trying to do in the first place with refcounting.
+
+The key of this that is coming to light is using "local heaps" -- that is, when
+we perform an allocation, we do so *within* the body of some function we are
+reducing.  Then the next time the function is applied, we have those allocations
+pre-performed and reduced and we just copy the results.
+
+The other key is distinguishing shared and unshared nodes (seems like most nodes
+want to be shared though), which allows us to create a map of where
+substitutions should go -- a substitution only descends into one branch at a
+time (which means, among other things, that we can substitute into other
+substitutions directly).  The details of this map are yet unclear.
+
+[Bolingbroke 2010]: https://www.microsoft.com/en-us/research/wp-content/uploads/2016/07/supercomp-by-eval.pdf
+[Thyer 1999]: http://thyer.name/phd-thesis/

@@ -515,7 +515,7 @@ The following step is possibly problematic -- we duplicate the case when we
 should have a chance to share it.  We could share by memoizing a substitution
 between two shared nodes (i.e. a shared argument and a shared body).  Let's try
 it.
-    
+
     = let ones = 1 : ones
           f2 = (f=(+1)) f
           mapf1 = \xs -> B1
